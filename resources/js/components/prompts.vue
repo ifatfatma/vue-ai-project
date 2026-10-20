@@ -104,13 +104,15 @@ async function loadPrompts(page = 1) {
         prompts.value = Array.isArray(result.data) ? result.data : [];
 
         // API pagination is inside the pagination object.
+        // Laravel's standard paginator puts these fields at the top level;
+        // some APIs wrap them in `pagination`. Support both response shapes.
+        const pagination = result.pagination || result.meta || result;
         currentPage.value = Number(
-            result.pagination?.current_page ?? page
+            pagination.current_page ?? pagination.currentPage ?? page
         );
-
-        lastPage.value = Number(
-            result.pagination?.last_page ?? 1
-        );
+        lastPage.value = Math.max(1, Number(
+            pagination.last_page ?? pagination.lastPage ?? 1
+        ));
 
         // Build categories from the prompts returned by the API.
         const categoryMap = new Map();
@@ -156,6 +158,10 @@ function setCategory(category) {
 async function toggleSave(prompt) {
     if (!requireLogin()) return;
     const id = prompt.id;
+    if (id === undefined || id === null) {
+        toast('This prompt has no valid ID.', 'error');
+        return;
+    }
     if (savingPrompts.value.includes(id)) return;
 
     if (!saveUrlTemplate) {
@@ -200,12 +206,43 @@ async function toggleSave(prompt) {
     }
 }
 
+async function trackPromptCopy(promptId) {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    try {
+        const response = await fetch(`/prompts/${encodeURIComponent(promptId)}/copy-track`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': csrf,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (!response.ok) {
+            // Clipboard copying should still succeed even if analytics tracking fails.
+            console.warn('Prompt copy tracking failed:', response.status);
+            return null;
+        }
+
+        return await response.json();
+    } catch (err) {
+        console.warn('Prompt copy tracking request failed:', err);
+        return null;
+    }
+}
+
 async function copyPrompt(prompt) {
     if (!requireLogin()) return;
 
     const text = prompt.id === selectedPrompt.value?.id
         ? filledSelectedPrompt.value
         : (prompt.prompt_text || '');
+
+    if (!String(text).trim()) {
+        toast('There is no prompt text to copy.', 'error');
+        return;
+    }
 
     try {
         if (navigator.clipboard && window.isSecureContext) {
@@ -225,16 +262,21 @@ async function copyPrompt(prompt) {
 
         copiedPrompt.value = prompt.id;
         toast('Prompt copied to clipboard!', 'success');
-        setTimeout(() => {
+
+        // Keep copy tracking separate so a tracking error cannot undo a successful copy.
+        void trackPromptCopy(prompt.id);
+
+        window.setTimeout(() => {
             if (copiedPrompt.value === prompt.id) copiedPrompt.value = null;
         }, 1800);
-    } catch {
+    } catch (err) {
+        console.error('Copy prompt failed:', err);
         toast('Unable to copy. Please try again.', 'error');
     }
 }
 
 async function sharePrompt(prompt) {
-    const url = `${window.location.origin}/prompts/${prompt.id}`;
+    const url = prompt.share_url || prompt.url || `${window.location.origin}/prompts/${encodeURIComponent(prompt.id)}`;
 
     if (navigator.share) {
         try {
@@ -291,7 +333,10 @@ function imageUrl(prompt) {
             return prompt.image;
         }
 
-        return `/storage/${prompt.image}`;
+        const storedPath = String(prompt.image).replace(/^\/+/, '');
+        return storedPath.startsWith('storage/')
+            ? `/${storedPath}`
+            : `/storage/${storedPath}`;
     }
 
     return '';
@@ -311,6 +356,29 @@ onMounted(() => {
 
         <!-- Compact page header: categories appear directly below the navbar -->
         <section class="prompts-section">
+            <!-- Search -->
+            <div class="prompt-search-wrap">
+                <label class="sr-only" for="prompt-hub-search">Search prompts</label>
+                <span class="prompt-search-icon" aria-hidden="true">⌕</span>
+                <input
+                    id="prompt-hub-search"
+                    v-model="searchQuery"
+                    class="prompt-search-input"
+                    type="search"
+                    placeholder="Search prompts, topics, or AI tools..."
+                    autocomplete="off"
+                />
+                <button
+                    v-if="searchQuery"
+                    type="button"
+                    class="prompt-search-clear"
+                    aria-label="Clear search"
+                    @click="searchQuery = ''"
+                >
+                    ×
+                </button>
+            </div>
+
             <!-- Category Filters -->
             <div class="category-list">
                 <button
@@ -648,7 +716,89 @@ onMounted(() => {
             background: rgba(255, 255, 255, .9);
         }
 
-        .hero-section {
+        /* ==========================================
+   HERO SECTION STYLES (Optimized & Fixed)
+   ================================          */
+.hero-section {
+    position: relative;
+    overflow: hidden;
+    color: #fff;
+    padding: 78px 0 86px;
+    background: radial-gradient(circle at 15% 20%, rgba(99, 102, 241, .3), transparent 30%),
+        radial-gradient(circle at 85% 15%, rgba(139, 92, 246, .26), transparent 28%),
+        linear-gradient(135deg, #0f172a 0%, #171a46 48%, #312e81 100%);
+}
+
+.hero-section::before,
+.hero-section::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    filter: blur(12px);
+}
+
+.hero-section::before {
+    width: 420px;
+    height: 420px;
+    right: -160px;
+    top: -220px;
+    background: rgba(139, 92, 246, .16);
+}
+
+.hero-section::after {
+    width: 280px;
+    height: 280px;
+    left: -130px;
+    bottom: -180px;
+    background: rgba(59, 130, 246, .12);
+}
+
+.hero-content {
+    position: relative;
+    z-index: 2;
+}
+
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 13px;
+    border-radius: 999px;
+    color: #c7d2fe;
+    background: rgba(99, 102, 241, .15);
+    border: 1px solid rgba(165, 180, 252, .22);
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 20px;
+}
+
+.hero-title {
+    font-size: clamp(2.3rem, 5vw, 4.2rem);
+    line-height: 1.08;
+    font-weight: 850;
+    letter-spacing: -2px;
+    margin-bottom: 20px;
+}
+
+.hero-title span {
+    background: linear-gradient(90deg, #a5b4fc, #c4b5fd, #93c5fd);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero-description {
+    max-width: 700px;
+    margin: 0 auto 30px;
+    color: rgba(255, 255, 255, .75);
+    font-size: 17px;
+    line-height: 1.7;
+}
+
+/* ==========================================
+   SEARCH WRAPPER & DROPDOWN FIXES
+   ================================          */
+.hero-section {
             position: relative;
             overflow: hidden;
             color: #fff;
@@ -2030,5 +2180,66 @@ onMounted(() => {
     #toastContainer { top: 76px; right: 12px; width: calc(100vw - 24px); }
     .app-toast { padding: 13px; }
 }
+
+
+
+        /* Prompt Hub component styles (matching the template class names) */
+        .prompt-hub { width: 100%; min-width: 0; }
+        .prompts-section { width: 100%; max-width: 1320px; margin: 0 auto; padding: 24px 16px 42px; }
+        .prompt-search-wrap { position: relative; display: flex; align-items: center; gap: 10px; width: min(100%, 760px); margin: 0 auto 22px; padding: 5px 12px; border: 1px solid #dbe3f0; border-radius: 14px; background: #fff; box-shadow: 0 5px 18px rgba(15,23,42,.05); }
+        .prompt-search-icon { color: #64748b; font-size: 24px; line-height: 1; }
+        .prompt-search-input { width: 100%; min-width: 0; padding: 10px 2px; border: 0; outline: 0; background: transparent; color: #111827; font: inherit; }
+        .prompt-search-input:focus { outline: none; box-shadow: none; }
+        .prompt-search-clear { border: 0; border-radius: 50%; width: 30px; height: 30px; flex: 0 0 30px; background: #f1f5f9; color: #475569; font-size: 20px; cursor: pointer; }
+        .category-list { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 9px; margin: 0 0 26px; }
+        .prompts-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; align-items: stretch; width: 100%; }
+        .prompt-image-wrapper { position: relative; width: 100%; height: 260px; overflow: hidden; background: linear-gradient(135deg,#f8fafc,#eef2ff); }
+        .prompt-image { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease, filter .3s ease; }
+        .prompt-card:hover .prompt-image { transform: scale(1.035); filter: brightness(.78); }
+        .image-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #6366f1; background: linear-gradient(135deg,#f8fafc,#eef2ff); font-weight: 700; }
+        .image-placeholder span { font-size: 40px; }
+        .image-overlay { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg,rgba(15,23,42,.05) 20%,rgba(15,23,42,.78) 100%); }
+        .image-category, .tool-badge { position: absolute; z-index: 1; top: 12px; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 9px; border-radius: 999px; font-size: 11px; font-weight: 750; }
+        .image-category { left: 12px; color: #3730a3; background: rgba(238,242,255,.96); }
+        .tool-badge { right: 12px; color: #fff; background: rgba(15,23,42,.78); }
+        .image-title { position: absolute; z-index: 1; left: 16px; right: 16px; bottom: 18px; margin: 0; color: #fff; font-size: 19px; line-height: 1.35; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,.25); }
+        .prompt-view-overlay { position: absolute; z-index: 2; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 0; background: rgba(15,23,42,.35); color: #fff; font-weight: 750; opacity: 0; transition: opacity .2s ease; cursor: pointer; }
+        .prompt-image-wrapper:hover .prompt-view-overlay, .prompt-view-overlay:focus-visible { opacity: 1; }
+        .prompt-view-icon { font-size: 30px; }
+        .prompt-card-body { padding: 12px; background: #fff; }
+        .prompt-actions { display: flex; gap: 8px; width: 100%; }
+        .action-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: 1 1 0; min-width: 0; min-height: 42px; padding: 8px 6px; border: 1px solid #dbe3f0; border-radius: 9px; background: #fff; color: #334155; font-size: 12px; font-weight: 750; cursor: pointer; transition: .2s ease; }
+        .action-btn:hover { transform: translateY(-1px); }
+        .action-btn:disabled { opacity: .55; cursor: wait; transform: none; }
+        .action-btn.save-btn.saved { color: #4f46e5; background: #eef2ff; border-color: #c7d2fe; }
+        .action-btn.copy-btn, .modal-copy-btn { color: #fff; background: linear-gradient(135deg,#10b981,#059669); border-color: transparent; }
+        .action-btn.share-btn { color: #4f46e5; background: #eef2ff; border-color: #c7d2fe; }
+        .status-box { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 220px; padding: 28px 18px; text-align: center; color: #475569; background: rgba(255,255,255,.8); border: 1px solid #e2e8f0; border-radius: 16px; }
+        .status-box h3, .status-box p { margin: 0; }
+        .status-icon, .empty-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #eef2ff; color: #4f46e5; font-size: 24px; font-weight: 800; }
+        .error-box .status-icon { color: #dc2626; background: #fef2f2; }
+        .loader { width: 32px; height: 32px; border: 3px solid #e0e7ff; border-top-color: #6366f1; border-radius: 50%; animation: prompt-hub-spin .8s linear infinite; }
+        @keyframes prompt-hub-spin { to { transform: rotate(360deg); } }
+        .retry-btn { padding: 9px 15px; border: 0; border-radius: 9px; color: #fff; background: #4f46e5; font-weight: 700; cursor: pointer; }
+        .pagination { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin-top: 28px; }
+        .page-btn, .page-number { min-height: 38px; padding: 7px 12px; border: 1px solid #dbe3f0; border-radius: 9px; background: #fff; color: #334155; font-weight: 700; cursor: pointer; }
+        .page-number.active { color: #fff; border-color: #4f46e5; background: #4f46e5; }
+        .page-btn:disabled { opacity: .45; cursor: not-allowed; }
+        .modal-backdrop { position: fixed; z-index: 11000; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; background: rgba(15,23,42,.72); backdrop-filter: blur(5px); }
+        .prompt-modal { position: relative; width: min(100%, 760px); max-height: calc(100vh - 40px); overflow-y: auto; border-radius: 18px; background: #fff; box-shadow: 0 25px 80px rgba(0,0,0,.3); }
+        .modal-close { position: absolute; z-index: 3; top: 12px; right: 12px; width: 38px; height: 38px; border: 0; border-radius: 50%; background: rgba(15,23,42,.75); color: #fff; font-size: 27px; line-height: 1; cursor: pointer; }
+        .modal-image { display: block; width: 100%; max-height: 300px; object-fit: cover; }
+        .modal-body { padding: 24px; }
+        .modal-body h2 { margin: 10px 0 18px; color: #111827; font-size: clamp(22px,3vw,30px); line-height: 1.25; }
+        .modal-category { display: inline-block; padding: 5px 10px; border-radius: 999px; color: #4338ca; background: #eef2ff; font-size: 12px; font-weight: 750; }
+        .prompt-variable-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }
+        .prompt-variable-field { display: flex; flex-direction: column; gap: 6px; color: #475569; font-size: 12px; font-weight: 700; }
+        .prompt-variable-field input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 9px; font: inherit; font-weight: 400; }
+        .modal-prompt-text { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; color: #334155; line-height: 1.7; }
+        .modal-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+        .modal-copy-btn { min-height: 42px; padding: 10px 16px; border: 0; border-radius: 9px; font-weight: 750; cursor: pointer; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+        @media (max-width: 900px) { .prompts-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; } .prompt-image-wrapper { height: 230px; } }
+        @media (max-width: 580px) { .prompts-section { padding: 18px 12px 30px; } .prompts-grid { grid-template-columns: minmax(0,1fr); gap: 16px; } .prompt-image-wrapper { height: 240px; } .prompt-variable-fields { grid-template-columns: minmax(0,1fr); } .modal-backdrop { padding: 10px; } .prompt-modal { max-height: calc(100vh - 20px); } .modal-body { padding: 18px; } .action-btn { font-size: 12px; } }
 
     </style>

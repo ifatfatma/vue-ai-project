@@ -23,42 +23,58 @@ class PromptController extends Controller
             ->latest()
             ->paginate($perPage);
 
-        $data = $prompts->getCollection()->map(function ($prompt) {
-            $imageUrl = null;
+        $data = $prompts->getCollection()
+            ->map(function ($prompt) {
+                $imageUrl = null;
 
-            if (!empty($prompt->image)) {
-                $imagePath = ltrim($prompt->image, '/');
+                if (!empty($prompt->image)) {
+                    $imagePath = trim($prompt->image);
 
-                $imageUrl = str_starts_with($imagePath, 'http://')
-                    || str_starts_with($imagePath, 'https://')
-                    ? $imagePath
-                    : asset('storage/' . $imagePath);
-            }
+                    // Preserve absolute image URLs.
+                    if (preg_match('/^https?:\/\//i', $imagePath)) {
+                        $imageUrl = $imagePath;
+                    } else {
+                        $imagePath = ltrim($imagePath, '/');
 
-            return [
-                'id' => $prompt->id,
-                'title' => $prompt->title,
-                'label' => $prompt->label,
-                'prompt_text' => $prompt->prompt_text,
+                        // Avoid duplicating the storage/ prefix.
+                        if (str_starts_with($imagePath, 'storage/')) {
+                            $imageUrl = asset($imagePath);
+                        } else {
+                            $imageUrl = asset(
+                                'storage/' . $imagePath
+                            );
+                        }
+                    }
+                }
 
-                'category' => $prompt->category ? [
-                    'id' => $prompt->category->id,
-                    'name' => $prompt->category->name,
-                    'slug' => $prompt->category->slug,
-                ] : null,
+                return [
+                    'id' => $prompt->id,
+                    'title' => $prompt->title,
+                    'label' => $prompt->label,
+                    'prompt_text' => $prompt->prompt_text,
 
-                'ai_tool' => $prompt->ai_tool,
-                'image' => $prompt->image,
-                'image_url' => $imageUrl,
-                'copies_count' => $prompt->copies_count,
-                'created_at' => $prompt->created_at,
-            ];
-        })->values();
+                    'category' => $prompt->category
+                        ? [
+                            'id' => $prompt->category->id,
+                            'name' => $prompt->category->name,
+                            'slug' => $prompt->category->slug,
+                        ]
+                        : null,
+
+                    'ai_tool' => $prompt->ai_tool,
+                    'image' => $prompt->image,
+                    'image_url' => $imageUrl,
+                    'copies_count' => $prompt->copies_count,
+                    'created_at' => $prompt->created_at,
+                ];
+            })
+            ->values();
 
         return response()->json([
             'success' => true,
             'message' => 'Prompts fetched successfully.',
             'data' => $data,
+
             'pagination' => [
                 'current_page' => $prompts->currentPage(),
                 'last_page' => $prompts->lastPage(),
