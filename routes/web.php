@@ -19,6 +19,23 @@ use App\Http\Controllers\UserAccountController;
 
 use App\Models\Prompt;
 use App\Models\PromptCopy;
+use Illuminate\Support\Facades\Storage;
+
+Route::get('/prompt-images/{path}', function ($path) {
+    $path = 'prompts/' . basename($path);
+
+    abort_unless(Storage::disk('public')->exists($path), 404);
+
+    return response()->file(
+        Storage::disk('public')->path($path),
+        [
+            'Content-Type' => mime_content_type(
+                Storage::disk('public')->path($path)
+            ),
+            'Cache-Control' => 'public, max-age=86400',
+        ]
+    );
+})->where('path', '.*')->name('prompt-images.show');
 
 
 /*
@@ -338,5 +355,4 @@ Route::prefix('admin')->group(function () {
 
 Route::get('/welcome', [AuthController::class, 'welcome'])
         ->name('admin.welcome.submit');
-
 
