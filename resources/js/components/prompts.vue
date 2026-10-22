@@ -354,6 +354,63 @@ onMounted(() => {
 <template>
     <div class="prompt-hub">
 
+
+    
+<section class="hero-section text-center">
+    <div class="container hero-content">
+
+        <div class="hero-badge">
+            <i class="bi bi-stars"></i> AI Prompt Library
+        </div>
+
+        <h1 class="hero-title">
+            Discover Powerful <span>AI Prompts</span>
+        </h1>
+
+        <p class="hero-description">
+            Explore curated prompts for ChatGPT, Claude, Gemini,
+            Midjourney and other powerful AI tools.
+        </p>
+
+        <div class="hero-search-wrapper">
+            <form @submit.prevent="currentPage = 1">
+                <div class="hero-search">
+                    <i
+                        class="bi bi-search d-flex align-items-center ps-3"
+                        style="color:#94a3b8;"
+                    ></i>
+
+                    <div class="position-relative flex-grow-1">
+                        <input
+                            type="text"
+                            id="prompt-search"
+                            v-model="searchQuery"
+                            class="hero-search-input w-100"
+                            placeholder="Search prompts, SEO, marketing, coding..."
+                            autocomplete="off"
+                        >
+
+                        <ul
+                            id="suggestionList"
+                            class="list-group position-absolute w-100 shadow-sm text-start"
+                            style="display:none;left:0;top:100%;"
+                        ></ul>
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="btn btn-hero-search px-4"
+                    >
+                        Search
+                    </button>
+                </div>
+            </form>
+        </div>
+
+    </div>
+</section>
+
+
         <!-- Compact page header: categories appear directly below the navbar -->
         <section class="prompts-section">
             <!-- Search -->

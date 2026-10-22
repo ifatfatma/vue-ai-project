@@ -94,12 +94,16 @@
 </head>
 
 <body class="d-flex flex-column min-vh-100 bg-light">
+     @include('front.nav')
+     <div id="app">
+            {{-- Main Content --}}
+            <main class="flex-grow-1">
+                @yield('content')
+            </main>
+     </div>
 
-    {{-- Main Content --}}
-    <main class="flex-grow-1">
-        @yield('content')
-    </main>
-
+        {{-- Add Prompt Modal --}}
+    @include('front.add-prompt-modal')
     {{-- Footer --}}
     @include('layouts.partials.footer')
 

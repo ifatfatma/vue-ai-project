@@ -326,6 +326,6 @@ class FrontendController extends Controller
         $prompt = Prompt::where('status', 'approved')
             ->findOrFail($id);
 
-        return view('prompts.show', compact('prompt'));
+        return view('prompt.show', compact('prompt'));
     }
 }

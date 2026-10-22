@@ -11,5 +11,7 @@ if (!appElement) {
         'Vue prompts were not mounted: #app element was not found on this page.'
     );
 } else {
-    createApp(Prompts).mount(appElement);
+    createApp({}).
+    component('home-prompts',Prompts).
+    mount(appElement);
 }

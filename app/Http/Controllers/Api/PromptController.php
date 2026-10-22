@@ -31,7 +31,7 @@ class PromptController extends Controller
                     $imagePath = trim($prompt->image);
 
                     // Preserve absolute image URLs.
-                    if (preg_match('/^https?:\/\//i', $imagePath)) {
+                   if (preg_match('/^https?:\/\//i', $imagePath)) {
                         $imageUrl = $imagePath;
                     } else {
                         $imagePath = ltrim($imagePath, '/');
