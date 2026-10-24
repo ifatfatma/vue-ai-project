@@ -31,29 +31,4 @@
     });
 </script>
 
-<!-- Bootstrap Modal Initialization -->
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        if (typeof bootstrap === 'undefined') {
-            console.error('Bootstrap JavaScript is not loaded.');
-            return;
-        }
 
-        document.querySelectorAll('[data-bs-toggle="modal"]').forEach(function (button) {
-            button.addEventListener('click', function () {
-                const targetSelector = button.getAttribute('data-bs-target');
-
-                if (!targetSelector) return;
-
-                const modalElement = document.querySelector(targetSelector);
-
-                if (!modalElement) {
-                    console.error('Modal not found:', targetSelector);
-                    return;
-                }
-
-                bootstrap.Modal.getOrCreateInstance(modalElement).show();
-            });
-        });
-    });
-</script>

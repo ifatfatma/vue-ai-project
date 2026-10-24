@@ -1,11 +1,12 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
 
 const prompts = ref([]);
 const categories = ref([]);
 const loading = ref(false);
 const error = ref('');
 const searchQuery = ref('');
+const suggestionsOpen = ref(false);
 const currentPage = ref(1);
 const lastPage = ref(1);
 const selectedCategory = ref('All Prompts');
@@ -13,6 +14,7 @@ const savedPrompts = ref([]);
 const copiedPrompt = ref(null);
 const selectedPrompt = ref(null);
 const variableValues = ref({});
+const promptTextExpanded = ref(false);
 const savingPrompts = ref([]);
 
 function toast(message, type = 'success') {
@@ -52,6 +54,41 @@ const categoryNames = computed(() => [
     ...categories.value.map(category => category.name),
 ]);
 
+const searchSuggestions = computed(() => {
+    const query = searchQuery.value.trim().toLowerCase();
+    if (!query) return [];
+
+    return prompts.value
+        .filter(prompt => {
+            const searchable = [
+                prompt.title,
+                prompt.label,
+                prompt.category?.name,
+                Array.isArray(prompt.ai_tool) ? prompt.ai_tool.join(' ') : prompt.ai_tool,
+                prompt.prompt_text,
+            ].filter(Boolean).join(' ').toLowerCase();
+
+            return searchable.includes(query);
+        })
+        .slice(0, 8);
+});
+
+function selectSearchSuggestion(prompt) {
+    searchQuery.value = prompt.title || prompt.label || '';
+    suggestionsOpen.value = false;
+    currentPage.value = 1;
+}
+
+function handleSearchKeydown(event) {
+    if (event.key === 'Escape') suggestionsOpen.value = false;
+}
+
+function handleSearchOutsideClick(event) {
+    if (!event.target.closest('.hero-search-wrapper')) {
+        suggestionsOpen.value = false;
+    }
+}
+
 const filteredPrompts = computed(() => {
     let result = prompts.value;
 
@@ -80,67 +117,104 @@ const filteredPrompts = computed(() => {
     return result;
 });
 
+
 async function loadPrompts(page = 1) {
     loading.value = true;
     error.value = '';
 
     try {
-        const response = await fetch(`/api/prompts?page=${page}`, {
-            headers: {
-                Accept: 'application/json',
-            },
-        });
+        const fetchPage = async (pageNumber) => {
+            const response = await fetch(`/api/prompts?page=${pageNumber}`, {
+                headers: { Accept: 'application/json' }
+            });
 
-        if (!response.ok) {
-            throw new Error(`Unable to load prompts. Status: ${response.status}`);
-        }
+            if (!response.ok) {
+                throw new Error(`Unable to load prompts. Status: ${response.status}`);
+            }
 
-        const result = await response.json();
+            const result = await response.json();
 
-        if (result.success === false) {
-            throw new Error(result.message || 'Unable to load prompts.');
-        }
+            if (result.success === false) {
+                throw new Error(result.message || 'Unable to load prompts.');
+            }
 
+            return result;
+        };
+
+        // Load the requested page for the visible prompt cards.
+        const result = await fetchPage(page);
         prompts.value = Array.isArray(result.data) ? result.data : [];
 
-        // API pagination is inside the pagination object.
-        // Laravel's standard paginator puts these fields at the top level;
-        // some APIs wrap them in `pagination`. Support both response shapes.
         const pagination = result.pagination || result.meta || result;
         currentPage.value = Number(
             pagination.current_page ?? pagination.currentPage ?? page
         );
+
         lastPage.value = Math.max(1, Number(
-            pagination.last_page ?? pagination.lastPage ?? 1
+            pagination.last_page ??
+            pagination.lastPage ??
+            pagination.last_page_number ??
+            1
         ));
 
-        // Build categories from the prompts returned by the API.
+        // Collect categories from all pages.
         const categoryMap = new Map();
 
-        prompts.value.forEach(prompt => {
-            if (prompt.category?.name) {
-                categoryMap.set(
-                    prompt.category.name,
-                    prompt.category
-                );
+        const collectCategories = (items) => {
+            if (!Array.isArray(items)) return;
+
+            items.forEach((prompt) => {
+                const category = prompt.category;
+
+                // Support category objects and common alternative field names.
+                const name = typeof category === 'string'
+                    ? category
+                    : category?.name ??
+                      category?.name_en ??
+                      prompt.category_name ??
+                      prompt.categoryName;
+
+                if (name && String(name).trim()) {
+                    const categoryName = String(name).trim();
+                    categoryMap.set(categoryName.toLowerCase(), categoryName);
+                }
+            });
+        };
+
+        collectCategories(prompts.value);
+
+        // Fetch all remaining pages for category discovery.
+        const pageNumbers = Array.from(
+            { length: lastPage.value },
+            (_, index) => index + 1
+        ).filter(pageNumber => pageNumber !== Number(page));
+
+        const results = await Promise.all(
+            pageNumbers.map(pageNumber =>
+                fetchPage(pageNumber).catch(() => null)
+            )
+        );
+
+        results.forEach(pageResult => {
+            if (pageResult) {
+                collectCategories(pageResult.data);
             }
         });
 
-        // Preserve categories from previous pages as well.
-        categories.value = [
-            ...new Map(
-                [...categories.value, ...categoryMap.values()].map(category => [
-                    category.name,
-                    category,
-                ])
-            ).values(),
-        ];
+      categories.value = Array.from(categoryMap.values())
+    .sort((a, b) =>
+        a.localeCompare(b, undefined, {
+            sensitivity: 'base'
+        })
+    )
+    .map(name => ({ name }));
     } catch (err) {
         error.value = err.message || 'Something went wrong.';
     } finally {
         loading.value = false;
     }
 }
+
 
 function changePage(page) {
     if (page < 1 || page > lastPage.value || loading.value) {
@@ -313,10 +387,18 @@ async function sharePrompt(prompt) {
 function openPrompt(prompt) {
     selectedPrompt.value = prompt;
     variableValues.value = {};
+    promptTextExpanded.value = false;
 }
 
 function closePrompt() {
     selectedPrompt.value = null;
+    promptTextExpanded.value = false;
+}
+
+function promptTools(prompt) {
+    const tools = prompt?.ai_tool ?? prompt?.ai_tools ?? prompt?.tools ?? [];
+    if (Array.isArray(tools)) return tools.map(tool => typeof tool === 'string' ? tool : (tool?.name || tool?.title || '')).filter(Boolean);
+    return String(tools).split(/[,|]/).map(tool => tool.trim()).filter(Boolean);
 }
 
 function imageUrl(prompt) {
@@ -346,16 +428,68 @@ function handleImageError(event) {
     event.target.style.display = 'none';
 }
 
+// The Add Prompt form is rendered by a separate Blade partial, not by this
+// Vue template. Use delegated document events so the dropdown works even
+// when the Bootstrap modal is inserted/shown after Vue has mounted.
+function handleAiToolsDropdownClick(event) {
+    const dropdown = event.target.closest('#aiToolsDropdown');
+    const menu = document.getElementById('aiToolsDropdownMenu');
+    const button = document.getElementById('aiToolsDropdownBtn');
+
+    if (!menu || !button) return;
+
+    if (event.target.closest('#aiToolsDropdownBtn')) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const isOpen = menu.classList.contains('show');
+        menu.classList.toggle('show', !isOpen);
+        button.setAttribute('aria-expanded', String(!isOpen));
+        return;
+    }
+
+    // Clicking outside the dropdown closes it; clicks on its options do not.
+    if (!dropdown) {
+        menu.classList.remove('show');
+        button.setAttribute('aria-expanded', 'false');
+    }
+}
+
+function handleAiToolsDropdownChange(event) {
+    if (!event.target.matches('#aiToolsDropdownMenu input[type="checkbox"]')) return;
+
+    const selectedText = document.getElementById('selectedToolsText');
+    const checkboxes = document.querySelectorAll('#aiToolsDropdownMenu input[type="checkbox"]:checked');
+
+    if (!selectedText) return;
+
+    const selectedNames = Array.from(checkboxes).map(checkbox => {
+        const name = checkbox.closest('.frontend-ai-tool-option')?.querySelector('.frontend-ai-tool-name');
+        return name?.textContent.trim() || checkbox.value;
+    });
+
+    selectedText.textContent = selectedNames.length
+        ? selectedNames.join(', ')
+        : 'Select AI Tools';
+}
+
 onMounted(() => {
     loadPrompts(1);
+    document.addEventListener('click', handleAiToolsDropdownClick);
+    document.addEventListener('change', handleAiToolsDropdownChange);
+    document.addEventListener('click', handleSearchOutsideClick);
+});
+
+onBeforeUnmount(() => {
+    document.removeEventListener('click', handleAiToolsDropdownClick);
+    document.removeEventListener('change', handleAiToolsDropdownChange);
+    document.removeEventListener('click', handleSearchOutsideClick);
 });
 </script>
 
 <template>
     <div class="prompt-hub">
 
-
-    
 <section class="hero-section text-center">
     <div class="container hero-content">
 
@@ -388,13 +522,35 @@ onMounted(() => {
                             class="hero-search-input w-100"
                             placeholder="Search prompts, SEO, marketing, coding..."
                             autocomplete="off"
+                            role="combobox"
+                            :aria-expanded="suggestionsOpen && searchSuggestions.length > 0"
+                            aria-controls="suggestionList"
+                            @focus="suggestionsOpen = true"
+                            @input="suggestionsOpen = true"
+                            @keydown="handleSearchKeydown"
                         >
 
                         <ul
+                            v-if="suggestionsOpen && searchSuggestions.length"
                             id="suggestionList"
-                            class="list-group position-absolute w-100 shadow-sm text-start"
-                            style="display:none;left:0;top:100%;"
-                        ></ul>
+                            class="search-suggestions list-group text-start"
+                            role="listbox"
+                        >
+                            <li
+                                v-for="(suggestion, index) in searchSuggestions"
+                                :key="suggestion.id ?? suggestion.title ?? index"
+                                class="search-suggestion-item"
+                                role="option"
+                                @mousedown.prevent="selectSearchSuggestion(suggestion)"
+                            >
+                                <span class="search-suggestion-title">
+                                    {{ suggestion.title || suggestion.label || 'Untitled Prompt' }}
+                                </span>
+                                <small class="search-suggestion-meta">
+                                    {{ suggestion.category?.name || 'Prompt' }}
+                                </small>
+                            </li>
+                        </ul>
                     </div>
 
                     <button
@@ -411,33 +567,13 @@ onMounted(() => {
 </section>
 
 
-        <!-- Compact page header: categories appear directly below the navbar -->
-        <section class="prompts-section">
-            <!-- Search -->
-            <div class="prompt-search-wrap">
-                <label class="sr-only" for="prompt-hub-search">Search prompts</label>
-                <span class="prompt-search-icon" aria-hidden="true">⌕</span>
-                <input
-                    id="prompt-hub-search"
-                    v-model="searchQuery"
-                    class="prompt-search-input"
-                    type="search"
-                    placeholder="Search prompts, topics, or AI tools..."
-                    autocomplete="off"
-                />
-                <button
-                    v-if="searchQuery"
-                    type="button"
-                    class="prompt-search-clear"
-                    aria-label="Clear search"
-                    @click="searchQuery = ''"
-                >
-                    ×
-                </button>
-            </div>
 
             <!-- Category Filters -->
-            <div class="category-list">
+           <!-- Prompts Section -->
+<section class="prompts-section">
+
+    <!-- Category Filters -->
+    <div class="category-list">
                 <button
                     v-for="category in categoryNames"
                     :key="category"
@@ -610,55 +746,49 @@ onMounted(() => {
             @click.self="closePrompt"
             @keydown.esc.window="closePrompt"
         >
-            <div
-                class="prompt-modal"
-                role="dialog"
-                aria-modal="true"
-                :aria-label="selectedPrompt.title || 'Prompt details'"
-            >
-                <button
-                    type="button"
-                    class="modal-close"
-                    aria-label="Close"
-                    @click="closePrompt"
-                >
-                    ×
-                </button>
+            <div class="prompt-modal prompt-detail-card" role="dialog" aria-modal="true" :aria-label="selectedPrompt.title || 'Prompt details'">
+                <div class="prompt-detail-header">
+                    <span class="modal-category" v-if="selectedPrompt.category?.name">{{ selectedPrompt.category.name }}</span>
+                    <button type="button" class="modal-close" aria-label="Close" @click="closePrompt">×</button>
+                </div>
 
-                <img
-                    v-if="imageUrl(selectedPrompt)"
-                    :src="imageUrl(selectedPrompt)"
-                    :alt="selectedPrompt.title"
-                    class="modal-image"
-                    @error="handleImageError"
-                />
+                <div class="prompt-detail-content">
+                    <h2 class="prompt-detail-title">{{ selectedPrompt.title || 'Untitled Prompt' }}</h2>
 
-                <div class="modal-body">
-                    <span v-if="selectedPrompt.category?.name" class="modal-category">
-                        {{ selectedPrompt.category.name }}
-                    </span>
-
-                    <h2>{{ selectedPrompt.title }}</h2>
-
-                    <div v-if="selectedPromptVariables.length" class="prompt-variable-fields">
-                        <label v-for="variable in selectedPromptVariables" :key="variable" class="prompt-variable-field">
-                            <span>{{ /^\d+$/.test(variable) ? `Variable ${variable}` : `Enter ${variable}` }}</span>
-                            <input v-model="variableValues[variable]" type="text" :placeholder="variable" autocomplete="off">
-                        </label>
+                    <div v-if="promptTools(selectedPrompt).length" class="prompt-detail-tools">
+                        <span v-for="tool in promptTools(selectedPrompt)" :key="tool" class="prompt-tool-chip">✧ {{ tool }}</span>
                     </div>
 
-                    <p class="modal-prompt-text">
-                        {{ filledSelectedPrompt || 'No prompt text available.' }}
-                    </p>
+                    <img
+                        v-if="imageUrl(selectedPrompt)"
+                        :src="imageUrl(selectedPrompt)"
+                        :alt="selectedPrompt.title || 'Prompt image'"
+                        class="modal-image prompt-detail-image"
+                        @error="handleImageError"
+                    />
+
+                    <section v-if="selectedPromptVariables.length" class="prompt-customize-panel">
+                        <div class="prompt-panel-heading"><span>⚙</span><div><strong>Customize this prompt</strong><small>Fill in the details below. The example shows you what to enter.</small></div></div>
+                        <label v-for="variable in selectedPromptVariables" :key="variable" class="prompt-variable-field">
+                            <span>{{ /^\d+$/.test(variable) ? `Enter ${variable}` : `Enter: ${variable}` }}</span>
+                            <input v-model="variableValues[variable]" type="text" :placeholder="variable" autocomplete="off">
+                        </label>
+                        <button type="button" class="prompt-reset-btn" @click="variableValues = {}">↻ Reset</button>
+                    </section>
+
+                    <div class="prompt-text-heading">PROMPT TEXT</div>
+                    <div class="prompt-text-preview">
+                        <p :class="['modal-prompt-text', { 'prompt-text-collapsed': !promptTextExpanded }]">{{ filledSelectedPrompt || 'No prompt text available.' }}</p>
+                        <button v-if="(filledSelectedPrompt || '').length > 220" type="button" class="prompt-read-more" @click="promptTextExpanded = !promptTextExpanded">
+                            {{ promptTextExpanded ? 'Read Less ↑' : 'Read More ↓' }}
+                        </button>
+                    </div>
 
                     <div class="modal-actions">
-                        <button
-                            class="copy-btn modal-copy-btn"
-                            @click="copyPrompt(selectedPrompt)"
-                        >
-                            {{ copiedPrompt === selectedPrompt.id ? '✓ Copied' : '▢ Copy Prompt' }}
+                        <button type="button" class="modal-copy-btn" @click="copyPrompt(selectedPrompt)">
+                            <template v-if="!isAuthenticated">↪ Login to Copy</template>
+                            <template v-else>{{ copiedPrompt === selectedPrompt.id ? '✓ Copied' : '▢ Copy Prompt' }}</template>
                         </button>
-
                     </div>
                 </div>
             </div>
@@ -983,26 +1113,6 @@ onMounted(() => {
             transform: translateY(-1px);
         }
 
-        #suggestionList {
-            max-height: 300px;
-            overflow-y: auto;
-            border: 0;
-            border-radius: 12px;
-            margin-top: 8px !important;
-            box-shadow: 0 15px 35px rgba(15, 23, 42, .18);
-            z-index: 1060;
-        }
-
-        #suggestionList .list-group-item {
-            border: 0;
-            border-bottom: 1px solid #f1f5f9;
-            padding: 12px 15px;
-            transition: .15s;
-        }
-
-        #suggestionList .list-group-item:hover {
-            background: #f5f3ff;
-        }
 
         .main-content {
             width: 100%;
@@ -1730,70 +1840,119 @@ onMounted(() => {
 }
 
 
+
 /* ---------------------------------------------------------
-   AI TOOLS DROPDOWN
+   AI TOOLS DROPDOWN - COMPLETE STYLING
    --------------------------------------------------------- */
 
 .frontend-ai-tools-dropdown {
     position: relative;
     width: 100%;
+    min-width: 0;
+    font-family: inherit;
 }
 
+/* Dropdown button */
 .frontend-ai-tools-dropdown-btn {
     width: 100%;
     min-height: 46px;
-    padding: 10px 13px;
+    padding: 11px 14px;
+
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
+
     border: 1px solid #dbe3ef;
     border-radius: 10px;
-    background: #fff;
-    color: #64748b;
+    background: #ffffff;
+
+    color: #475569;
+    font-family: inherit;
     font-size: 13px;
+    font-weight: 500;
+    line-height: 1.5;
     text-align: left;
+
     cursor: pointer;
-    transition: border-color .2s, box-shadow .2s;
+    outline: none;
+
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease,
+        background-color 0.2s ease;
 }
 
-.frontend-ai-tools-dropdown-btn:hover,
+.frontend-ai-tools-dropdown-btn:hover {
+    border-color: #a5b4fc;
+}
+
+.frontend-ai-tools-dropdown-btn:focus-visible,
 .frontend-ai-tools-dropdown-btn[aria-expanded="true"] {
     border-color: #818cf8;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, .08);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
-.frontend-ai-tools-dropdown-btn i {
+.frontend-ai-tools-dropdown-btn #selectedToolsText {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.frontend-ai-tools-dropdown-btn > i {
+    flex-shrink: 0;
     color: #64748b;
-    transition: transform .2s;
+    font-size: 13px;
+    transition: transform 0.2s ease;
 }
 
-.frontend-ai-tools-dropdown-btn[aria-expanded="true"] i {
+.frontend-ai-tools-dropdown-btn[aria-expanded="true"] > i {
     transform: rotate(180deg);
 }
 
+/* Dropdown options menu */
 .frontend-ai-tools-dropdown-menu {
     display: none;
+
     position: absolute;
     top: calc(100% + 6px);
     left: 0;
     right: 0;
-    z-index: 1055;
+    z-index: 1060;
+
     max-height: 250px;
+    overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
+
     padding: 6px 0;
-    background: #fff;
+    margin: 0;
+
+    background: #ffffff;
     border: 1px solid #e2e8f0;
     border-radius: 11px;
-    box-shadow: 0 18px 40px rgba(15, 23, 42, .15);
+
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f8fafc;
 }
 
+/* JavaScript adds the show class when opened */
+.frontend-ai-tools-dropdown-menu.show {
+    display: block;
+}
+
+/* Scrollbar for Chrome, Edge and Safari */
 .frontend-ai-tools-dropdown-menu::-webkit-scrollbar {
     width: 6px;
 }
 
 .frontend-ai-tools-dropdown-menu::-webkit-scrollbar-track {
     background: #f8fafc;
+    border-radius: 10px;
 }
 
 .frontend-ai-tools-dropdown-menu::-webkit-scrollbar-thumb {
@@ -1801,62 +1960,137 @@ onMounted(() => {
     border-radius: 10px;
 }
 
+.frontend-ai-tools-dropdown-menu::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Individual option */
 .frontend-ai-tool-option {
     position: relative;
+
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 10px;
+
+    width: 100%;
     min-height: 42px;
+    box-sizing: border-box;
+
     margin: 0;
-    padding: 8px 13px;
-    cursor: pointer;
+    padding: 9px 13px;
+
     color: #334155;
+    font-family: inherit;
     font-size: 13px;
-    transition: background .15s;
+    font-weight: 400;
+    line-height: 1.4;
+
+    cursor: pointer;
+    user-select: none;
+
+    background: transparent;
+    transition: background-color 0.15s ease;
 }
 
 .frontend-ai-tool-option:hover {
-    background: #f8f7ff;
+    background: #f5f3ff;
 }
 
-.frontend-ai-tool-option input {
+/* Hide the native checkbox but preserve its checked state */
+.frontend-ai-tool-option input[type="checkbox"] {
     position: absolute;
+    width: 1px;
+    height: 1px;
+
+    margin: 0;
+    padding: 0;
+
     opacity: 0;
-    pointer-events: none;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
+/* Custom checkbox */
 .frontend-ai-tool-check {
     width: 18px;
     height: 18px;
+    flex: 0 0 18px;
+
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
+
+    box-sizing: border-box;
     border: 1px solid #cbd5e1;
     border-radius: 5px;
-    background: #fff;
+
+    background: #ffffff;
     color: transparent;
     font-size: 11px;
-    transition: .15s;
+
+    transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease;
 }
 
-.frontend-ai-tool-option input:checked + .frontend-ai-tool-check {
+/* Checked checkbox */
+.frontend-ai-tool-option input[type="checkbox"]:checked
++ .frontend-ai-tool-check {
     border-color: #6366f1;
     background: linear-gradient(135deg, #6366f1, #7c3aed);
-    color: #fff;
+    color: #ffffff;
 }
 
+/* Keyboard accessibility */
+.frontend-ai-tool-option input[type="checkbox"]:focus-visible
++ .frontend-ai-tool-check {
+    outline: 3px solid rgba(99, 102, 241, 0.2);
+    outline-offset: 2px;
+}
+
+/* Option label */
 .frontend-ai-tool-name {
-    font-weight: 600;
+    display: block;
+    min-width: 0;
+    flex: 1;
+
+    color: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+
+    overflow-wrap: anywhere;
 }
 
+/* Hint below dropdown */
 .frontend-field-hint {
     display: block;
     margin-top: 7px;
+
     color: #94a3b8;
-    font-size: 10px;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.5;
 }
 
+/* Small screens */
+@media (max-width: 576px) {
+    .frontend-ai-tools-dropdown-menu {
+        max-height: 220px;
+    }
+
+    .frontend-ai-tools-dropdown-btn {
+        min-height: 44px;
+        padding: 10px 12px;
+    }
+
+    .frontend-ai-tool-option {
+        min-height: 40px;
+        padding: 9px 12px;
+    }
+}
 
 /* ---------------------------------------------------------
    IMAGE UPLOAD
@@ -2282,7 +2516,19 @@ onMounted(() => {
         .page-btn, .page-number { min-height: 38px; padding: 7px 12px; border: 1px solid #dbe3f0; border-radius: 9px; background: #fff; color: #334155; font-weight: 700; cursor: pointer; }
         .page-number.active { color: #fff; border-color: #4f46e5; background: #4f46e5; }
         .page-btn:disabled { opacity: .45; cursor: not-allowed; }
-        .modal-backdrop { position: fixed; z-index: 11000; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; background: rgba(15,23,42,.72); backdrop-filter: blur(5px); }
+        /* Vue prompt-details modal only */
+.prompt-hub .modal-backdrop {
+    position: fixed;
+    z-index: 11000;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    overflow-y: auto;
+    background: rgba(15,23,42,.72);
+    backdrop-filter: blur(5px);
+}
         .prompt-modal { position: relative; width: min(100%, 760px); max-height: calc(100vh - 40px); overflow-y: auto; border-radius: 18px; background: #fff; box-shadow: 0 25px 80px rgba(0,0,0,.3); }
         .modal-close { position: absolute; z-index: 3; top: 12px; right: 12px; width: 38px; height: 38px; border: 0; border-radius: 50%; background: rgba(15,23,42,.75); color: #fff; font-size: 27px; line-height: 1; cursor: pointer; }
         .modal-image { display: block; width: 100%; max-height: 300px; object-fit: cover; }
@@ -2297,6 +2543,176 @@ onMounted(() => {
         .modal-copy-btn { min-height: 42px; padding: 10px 16px; border: 0; border-radius: 9px; font-weight: 750; cursor: pointer; }
         .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
         @media (max-width: 900px) { .prompts-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; } .prompt-image-wrapper { height: 230px; } }
-        @media (max-width: 580px) { .prompts-section { padding: 18px 12px 30px; } .prompts-grid { grid-template-columns: minmax(0,1fr); gap: 16px; } .prompt-image-wrapper { height: 240px; } .prompt-variable-fields { grid-template-columns: minmax(0,1fr); } .modal-backdrop { padding: 10px; } .prompt-modal { max-height: calc(100vh - 20px); } .modal-body { padding: 18px; } .action-btn { font-size: 12px; } }
+     @media (max-width: 580px) {
+    .prompts-section {
+        padding: 18px 12px 30px;
+    }
 
-    </style>
+    .prompts-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 16px;
+    }
+
+    .prompt-image-wrapper {
+        height: 240px;
+    }
+
+    .prompt-variable-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .prompt-hub .modal-backdrop {
+        padding: 10px;
+    }
+
+    .prompt-modal {
+        max-height: calc(100vh - 20px);
+    }
+
+    .modal-body {
+        padding: 18px;
+    }
+
+    .action-btn {
+        font-size: 12px;
+    }
+}
+
+
+/* Align Add Prompt and Login to the right side of the header */
+.modern-navbar .container,
+.modern-navbar .container-fluid {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+/* Push navigation buttons to the right */
+.modern-navbar .navbar-collapse {
+    flex-grow: 1;
+}
+
+.modern-navbar .navbar-nav {
+    margin-left: auto !important;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Keep Add Prompt button properly sized */
+.modern-navbar .add-prompt-btn {
+    width: auto !important;
+    min-width: 140px;
+    white-space: nowrap;
+}
+
+/* Keep Login aligned with Add Prompt */
+.modern-navbar .navbar-account {
+    white-space: nowrap;
+}
+
+/* Mobile layout */
+@media (max-width: 767px) {
+    .modern-navbar .navbar-nav {
+        margin-left: 0 !important;
+        align-items: stretch;
+        gap: 8px;
+    }
+}
+
+    
+
+/* Prompt details card styled to match the requested reference */
+.prompt-hub .modal-backdrop { z-index: 11000; padding: 16px; background: rgba(15, 23, 42, .52); backdrop-filter: blur(2px); }
+.prompt-hub .prompt-detail-card { width: min(100%, 620px); max-height: calc(100vh - 32px); overflow: hidden; border-radius: 13px; }
+.prompt-detail-header { position: relative; min-height: 42px; display: flex; align-items: center; padding: 8px 42px 8px 14px; background: linear-gradient(110deg, #211b50, #39277f); }
+.prompt-detail-header .modal-category { padding: 4px 8px; border-radius: 4px; background: #fff; color: #4338ca; font-size: 10px; }
+.prompt-detail-header .modal-close { top: 5px; right: 7px; width: 30px; height: 30px; background: transparent; color: #dbeafe; font-size: 24px; }
+.prompt-detail-content { padding: 14px; overflow-y: auto; max-height: calc(100vh - 74px); }
+.prompt-detail-title { margin: 0 0 9px !important; font-size: 18px !important; line-height: 1.3 !important; }
+.prompt-detail-tools { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.prompt-tool-chip { display: inline-flex; align-items: center; gap: 3px; padding: 3px 7px; border: 1px solid #ddd6fe; border-radius: 5px; background: #f5f3ff; color: #6d28d9; font-size: 9px; font-weight: 700; }
+.prompt-detail-image { display: block; width: 100%; max-height: 220px; object-fit: contain; margin: 0 auto 12px; border-radius: 8px; background: #f8fafc; }
+.prompt-customize-panel { padding: 12px; margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 9px; background: linear-gradient(135deg,#fafaff,#f5f3ff); }
+.prompt-panel-heading { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 11px; color: #312e81; font-size: 11px; }
+.prompt-panel-heading > span { color: #6366f1; }
+.prompt-panel-heading small { display: block; margin-top: 3px; color: #64748b; font-size: 9px; font-weight: 400; }
+.prompt-customize-panel .prompt-variable-field { margin-bottom: 8px; gap: 4px; font-size: 9px; }
+.prompt-customize-panel .prompt-variable-field input { padding: 7px 9px; border-radius: 6px; background: #fff; font-size: 10px; }
+.prompt-reset-btn { padding: 4px 8px; border: 0; border-radius: 5px; background: #fff; color: #64748b; font-size: 9px; }
+.prompt-text-heading { margin: 0 0 6px; color: #64748b; font-size: 10px; font-weight: 800; }
+.prompt-text-preview { position: relative; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
+.prompt-text-preview .modal-prompt-text { max-height: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #475569; font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.prompt-text-preview .modal-prompt-text.prompt-text-collapsed { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.prompt-read-more { display: block; margin: 7px 0 0 auto; padding: 0; border: 0; background: transparent; color: #4f46e5; font-size: 10px; font-weight: 700; cursor: pointer; }
+.prompt-detail-card .modal-actions { margin-top: 12px; }
+.prompt-detail-card .modal-copy-btn { min-height: 34px; padding: 8px 12px; font-size: 10px; }
+@media (max-width: 580px) { .prompt-hub .prompt-detail-card { max-height: calc(100vh - 20px); } .prompt-detail-content { max-height: calc(100vh - 62px); padding: 12px; } .prompt-detail-image { max-height: 180px; } }
+
+
+/* Live search suggestions - kept independent from the prompt details modal */
+.prompt-hub .hero-section {
+    position: relative;
+    z-index: 5;
+    overflow: visible !important;
+}
+.prompt-hub .hero-search-wrapper {
+    position: relative;
+    z-index: 20;
+    overflow: visible !important;
+}
+.prompt-hub .hero-search-wrapper form,
+.prompt-hub .hero-search {
+    overflow: visible !important;
+}
+.prompt-hub .hero-search-wrapper .position-relative {
+    min-width: 0;
+}
+.prompt-hub #suggestionList {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 2000;
+    max-height: 280px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 15px 35px rgba(15, 23, 42, .2);
+}
+.prompt-hub .search-suggestion-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 16px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+    background: #fff;
+    cursor: pointer;
+}
+.prompt-hub .search-suggestion-item:last-child { border-bottom: 0; }
+.prompt-hub .search-suggestion-item:hover {
+    background: #f5f3ff;
+    color: #4f46e5;
+}
+.prompt-hub .search-suggestion-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.prompt-hub .search-suggestion-meta {
+    flex-shrink: 0;
+    color: #64748b;
+    font-size: 11px;
+}
+@media (max-width: 576px) {
+    .prompt-hub #suggestionList { max-height: 220px; }
+    .prompt-hub .search-suggestion-item { padding: 11px 12px; }
+}
+
+</style>
