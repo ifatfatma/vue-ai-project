@@ -94,9 +94,9 @@ class FrontendAuthController extends Controller
          * This prevents the user from trying to use an OTP
          * that was never delivered.
          */
-        $user->otp = null;
+       /*  $user->otp = null;
         $user->otp_expires_at = null;
-        $user->save();
+        $user->save(); */
 
         return back()
             ->withInput($request->only('email'))
