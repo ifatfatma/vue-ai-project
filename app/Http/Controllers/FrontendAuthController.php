@@ -66,7 +66,7 @@ class FrontendAuthController extends Controller
         'otp' => $otp,
     ]);
 
-    try {
+  /*   try {
 
         // Send through Brevo API
         $brevoMail->sendOtp(
@@ -98,11 +98,45 @@ class FrontendAuthController extends Controller
         $user->otp_expires_at = null;
         $user->save(); */
 
-        return back()
+         /*  return back()
             ->withInput($request->only('email'))
             ->withErrors([
                 'email' => 'Unable to send OTP email. Please try again later.',
             ]);
+    } */
+
+
+
+            try {
+
+        // Send through Brevo API
+        $brevoMail->sendOtp(
+            $user->email,
+            $otp,
+            $user
+        );
+
+        // Store email in session only after successful send
+        $request->session()->put('otp_email', $user->email);
+
+        return redirect()
+            ->route('frontend.otp.verify.form')
+            ->with('success', 'OTP sent successfully to your email.');
+
+    } catch (Throwable $e) {
+
+        Log::error('OTP email sending failed.', [
+            'email' => $user->email,
+            'error' => $e->getMessage(),
+        ]);
+
+        // 🟢 FIX: Email fail hone par bhi session me email daal dein
+        $request->session()->put('otp_email', $user->email);
+
+        // 🟢 FIX: Error return karne ki bajaye seedha verify page par bhej dein
+        return redirect()
+            ->route('frontend.otp.verify.form')
+            ->with('success', 'Email failed to send, but OTP is available in logs for testing.');
     }
 }
     public function showVerifyForm(Request $request)

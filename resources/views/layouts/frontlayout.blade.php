@@ -94,18 +94,34 @@
 </head>
 
 <body class="d-flex flex-column min-vh-100 bg-light">
-     @include('front.nav')
-     <div id="app">
-            {{-- Main Content --}}
-            <main class="flex-grow-1">
-                @yield('content')
-            </main>
-     </div>
 
-        {{-- Add Prompt Modal --}}
-    @include('front.add-prompt-modal')
-    {{-- Footer --}}
-    @include('layouts.partials.footer')
+    {{-- Hide the main navbar on the My Submitted Prompts page --}}
+    @if (empty($hideNavbar))
+        @include('front.nav')
+    @endif
+
+    <div
+        id="app"
+        data-authenticated="{{ auth('frontend')->check() ? 'true' : 'false' }}"
+        data-login-url="{{ route('frontend.login') }}"
+        data-save-url-template="{{ url('/prompts/__PROMPT_ID__/save') }}"
+    >
+        <main class="flex-grow-1">
+            @yield('content')
+        </main>
+    </div>
+
+    {{-- Add Prompt Modal --}}
+    @if (empty($hideAddPromptModal))
+        @include('front.add-prompt-modal', [
+            'categories' => $categories ?? collect()
+        ])
+    @endif
+
+    {{-- Hide the main footer on the My Submitted Prompts page --}}
+    @if (empty($hideFooter))
+        @include('layouts.partials.footer')
+    @endif
 
     {{-- Common Frontend JS --}}
     @include('layouts.partials.js')

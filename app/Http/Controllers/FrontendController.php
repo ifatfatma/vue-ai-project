@@ -213,10 +213,11 @@ class FrontendController extends Controller
             ->paginate(10)
             ->withQueryString();
 
-        return view(
-            'pages.front.user-prompts',
-            compact('prompts')
-        );
+       return view('front.user-prompts', [
+    'prompts' => $prompts,
+    'hideNavbar' => true,
+    'hideFooter' => true,
+]);
     }
 
 
@@ -326,6 +327,6 @@ class FrontendController extends Controller
         $prompt = Prompt::where('status', 'approved')
             ->findOrFail($id);
 
-        return view('prompt.show', compact('prompt'));
+        return view('prompts.show', compact('prompt'));
     }
 }

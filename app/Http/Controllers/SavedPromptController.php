@@ -3,18 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\Prompt;
-use Illuminate\Http\Request;
 
 class SavedPromptController extends Controller
 {
     /**
-     * Save / unsave a prompt.
+     * Save or unsave a prompt.
      */
     public function toggle(Prompt $prompt)
     {
         $user = auth('frontend')->user();
 
-       
         if (!$user) {
             return response()->json([
                 'saved' => false,
@@ -27,7 +25,6 @@ class SavedPromptController extends Controller
             ->exists();
 
         if ($saved) {
-
             $user->savedPrompts()->detach($prompt->id);
 
             return response()->json([
@@ -45,16 +42,15 @@ class SavedPromptController extends Controller
     }
 
     /**
-     * Show user's saved prompts.
+     * Show the authenticated user's saved prompts.
      */
     public function index()
     {
         $user = auth('frontend')->user();
 
-       
         if (!$user) {
             return redirect()
-                ->route('login')
+                ->route('frontend.login')
                 ->with('error', 'Please login first.');
         }
 
@@ -63,9 +59,6 @@ class SavedPromptController extends Controller
             ->latest('saved_prompts.created_at')
             ->paginate(12);
 
-        return view(
-            'pages.front.saved-prompts',
-            compact('prompts')
-        );
+        return view('front.saved-prompts', compact('prompts'));
     }
 }
