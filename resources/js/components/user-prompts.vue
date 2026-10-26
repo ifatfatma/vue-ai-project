@@ -344,14 +344,7 @@ onBeforeUnmount(() => {
                                     Search
                                 </button>
 
-                                <button
-                                    v-if="searchQuery || search"
-                                    type="button"
-                                    class="btn btn-secondary px-3"
-                                    @click="clearSearch"
-                                >
-                                    <i class="bi bi-x-lg"></i>
-                                </button>
+                               
 
                                 <!-- Search Suggestions -->
                                 <ul
