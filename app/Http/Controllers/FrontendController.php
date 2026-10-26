@@ -323,6 +323,8 @@ public function editPrompt($id)
     |--------------------------------------------------------------------------
     */
 
+    
+
     public function show($id)
     {
         $prompt = Prompt::where('status', 'approved')
@@ -330,4 +332,5 @@ public function editPrompt($id)
 
         return view('prompts.show', compact('prompt'));
     }
+
 }

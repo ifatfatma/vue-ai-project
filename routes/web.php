@@ -67,8 +67,14 @@ Route::get('/search-suggestions', [FrontendController::class, 'searchSuggestions
 Route::get('/user-prompts/suggestions', [FrontendController::class, 'userSearchSuggestions'])
     ->name('user.prompts.suggestions');
 
+
+
+
 Route::get('/prompts/{id}', [FrontendController::class, 'show'])
     ->name('prompts.show');
+
+
+
 
 
 /*
