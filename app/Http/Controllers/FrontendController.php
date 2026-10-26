@@ -227,21 +227,22 @@ class FrontendController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    public function editPrompt($id)
-    {
-        $frontendUser = Auth::guard('frontend')->user();
+  
 
-        $prompt = Prompt::where('id', $id)
-            ->where('frontend_user_id', $frontendUser->id)
-            ->firstOrFail();
+public function editPrompt($id)
+{
+    $frontendUser = Auth::guard('frontend')->user();
 
-        $categories = Category::all();
+    $prompt = Prompt::where('id', $id)
+        ->where('frontend_user_id', $frontendUser->id)
+        ->firstOrFail();
 
-        return view(
-            'pages.front.edit-prompt',
-            compact('prompt', 'categories')
-        );
-    }
+    $categories = Category::all();
+
+    return view('front.edit-prompt', compact('prompt', 'categories'));
+}
+
+
 
 
     /*

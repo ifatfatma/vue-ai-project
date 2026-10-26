@@ -129,5 +129,7 @@
     {{-- Page-Specific JS --}}
     @stack('scripts')
 
+    
+
 </body>
 </html>

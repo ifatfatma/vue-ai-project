@@ -1,4 +1,3 @@
-
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 
@@ -22,6 +21,10 @@ const searchQuery = ref(props.search);
 const suggestions = ref([]);
 const showSuggestions = ref(false);
 const alertVisible = ref(Boolean(props.successMessage));
+
+const deleteDialog = ref(null);
+const deletingPrompt = ref(null);
+const deleting = ref(false);
 
 let suggestionTimer;
 let requestController;
@@ -77,6 +80,7 @@ function statusClass(status) {
 
 function ratingValue(prompt) {
     const value = Number(prompt.rating ?? 0);
+
     return Number.isFinite(value)
         ? Math.max(0, Math.min(5, Math.round(value)))
         : 0;
@@ -86,6 +90,7 @@ function formattedDate(value) {
     if (!value) return '—';
 
     const date = new Date(value);
+
     if (Number.isNaN(date.getTime())) return '—';
 
     return new Intl.DateTimeFormat('en-GB', {
@@ -101,10 +106,14 @@ function searchPrompts() {
     const url = new URL(props.promptsUrl, window.location.origin);
     const query = searchQuery.value.trim();
 
-    if (query) url.searchParams.set('search', query);
-    else url.searchParams.delete('search');
+    if (query) {
+        url.searchParams.set('search', query);
+    } else {
+        url.searchParams.delete('search');
+    }
 
     url.searchParams.delete('page');
+
     window.location.href = url.toString();
 }
 
@@ -113,7 +122,9 @@ function clearSearch() {
     suggestions.value = [];
     showSuggestions.value = false;
 
-    if (requestController) requestController.abort();
+    if (requestController) {
+        requestController.abort();
+    }
 
     window.location.href = props.promptsUrl;
 }
@@ -124,7 +135,9 @@ function selectPrompt(title) {
 }
 
 async function fetchSuggestions(query) {
-    if (requestController) requestController.abort();
+    if (requestController) {
+        requestController.abort();
+    }
 
     requestController = new AbortController();
     const controller = requestController;
@@ -141,7 +154,9 @@ async function fetchSuggestions(query) {
             signal: controller.signal,
         });
 
-        if (!response.ok) throw new Error('Unable to load suggestions.');
+        if (!response.ok) {
+            throw new Error('Unable to load suggestions.');
+        }
 
         const data = await response.json();
 
@@ -164,13 +179,19 @@ watch(searchQuery, (value) => {
     const query = value.trim();
 
     if (query.length < 2) {
-        if (requestController) requestController.abort();
+        if (requestController) {
+            requestController.abort();
+        }
+
         suggestions.value = [];
         showSuggestions.value = false;
         return;
     }
 
-    suggestionTimer = setTimeout(() => fetchSuggestions(query), 250);
+    suggestionTimer = setTimeout(
+        () => fetchSuggestions(query),
+        250
+    );
 });
 
 function pageUrl(page) {
@@ -179,7 +200,9 @@ function pageUrl(page) {
 
     url.searchParams.set('page', page);
 
-    if (query) url.searchParams.set('search', query);
+    if (query) {
+        url.searchParams.set('search', query);
+    }
 
     return url.pathname + url.search;
 }
@@ -194,14 +217,40 @@ function hideSuccessAlert() {
     alertVisible.value = false;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Modern Delete Confirmation Dialog
+|--------------------------------------------------------------------------
+*/
+
 function confirmDelete(prompt) {
-    if (!window.confirm(
-        'Are you sure you want to move this prompt to trash?'
-    )) return;
+    if (deleting.value) return;
+
+    deletingPrompt.value = prompt;
+
+    if (deleteDialog.value && !deleteDialog.value.open) {
+        deleteDialog.value.showModal();
+    }
+}
+
+function closeDeleteDialog() {
+    if (deleting.value) return;
+
+    if (deleteDialog.value?.open) {
+        deleteDialog.value.close();
+    }
+
+    deletingPrompt.value = null;
+}
+
+function movePromptToTrash() {
+    if (!deletingPrompt.value || deleting.value) return;
+
+    deleting.value = true;
 
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = deleteUrl(prompt);
+    form.action = deleteUrl(deletingPrompt.value);
 
     const csrf = document.createElement('input');
     csrf.type = 'hidden';
@@ -229,237 +278,410 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     document.removeEventListener('click', handleOutsideClick);
+
     clearTimeout(suggestionTimer);
     clearTimeout(alertTimer);
 
-    if (requestController) requestController.abort();
+    if (requestController) {
+        requestController.abort();
+    }
 });
 </script>
 
 <template>
     <div class="user-prompts-page">
+        <!-- Navbar -->
         <header class="site-navbar">
-            <a :href="homeUrl" class="brand-title">AI Prompt Hub</a>
+            <a :href="homeUrl" class="brand-title">
+                AI Prompt Hub
+            </a>
+
             <a :href="homeUrl" class="back-home-btn">
-                <i class="bi bi-arrow-left me-2"></i> Back to Home
+                <i class="bi bi-arrow-left me-2"></i>
+                Back to Home
             </a>
         </header>
 
         <main class="page-content">
-        <section class="hero-section text-center">
-            <div class="container">
-                <h1 class="fw-bold display-6 mb-2">
-                    My Submitted Prompts Lists
-                </h1>
+            <!-- Hero Section -->
+            <section class="hero-section text-center">
+                <div class="container">
+                    <h1 class="fw-bold display-6 mb-2">
+                        My Submitted Prompts Lists
+                    </h1>
 
-                <p class="lead text-muted mb-4">
-                    Manage your custom prompts, track their approval status,
-                    and update them.
-                </p>
+                    <p class="lead text-muted mb-4">
+                        Manage your custom prompts, track their approval
+                        status, and update them.
+                    </p>
 
-                <div class="row justify-content-center position-relative">
-                    <div class="col-md-6">
-                        <form
-                            class="input-group shadow-sm user-prompt-search"
-                            @submit.prevent="searchPrompts"
-                        >
-                            <input
-                                v-model="searchQuery"
-                                id="searchBox"
-                                type="text"
-                                name="search"
-                                class="form-control border-0 py-2"
-                                placeholder="Search your prompts by title..."
-                                autocomplete="off"
-                                @focus="showSuggestions = suggestions.length > 0"
-                            />
-
-                            <button
-                                class="btn btn-primary px-4"
-                                type="submit"
+                    <!-- Search -->
+                    <div class="row justify-content-center position-relative">
+                        <div class="col-md-6">
+                            <form
+                                class="input-group shadow-sm user-prompt-search"
+                                @submit.prevent="searchPrompts"
                             >
-                                <i class="bi bi-search"></i> Search
-                            </button>
+                                <input
+                                    v-model="searchQuery"
+                                    id="searchBox"
+                                    type="text"
+                                    name="search"
+                                    class="form-control border-0 py-2"
+                                    placeholder="Search your prompts by title..."
+                                    autocomplete="off"
+                                    @focus="
+                                        showSuggestions =
+                                            suggestions.length > 0
+                                    "
+                                />
 
-
-                            <ul
-                                v-if="showSuggestions && suggestions.length"
-                                class="list-group user-prompt-suggestions shadow-sm text-start"
-                            >
-                                <li
-                                    v-for="(item, index) in suggestions"
-                                    :key="item.id ?? `${item.title}-${index}`"
-                                    class="list-group-item list-group-item-action text-dark"
-                                    @click="selectPrompt(typeof item === 'string' ? item : item.title)"
+                                <button
+                                    class="btn btn-primary px-4"
+                                    type="submit"
                                 >
-                                    {{ typeof item === 'string' ? item : item.title }}
-                                </li>
-                            </ul>
-                        </form>
+                                    <i class="bi bi-search"></i>
+                                    Search
+                                </button>
+
+                                <button
+                                    v-if="searchQuery || search"
+                                    type="button"
+                                    class="btn btn-secondary px-3"
+                                    @click="clearSearch"
+                                >
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+
+                                <!-- Search Suggestions -->
+                                <ul
+                                    v-if="
+                                        showSuggestions &&
+                                        suggestions.length
+                                    "
+                                    class="list-group user-prompt-suggestions shadow-sm text-start"
+                                >
+                                    <li
+                                        v-for="(item, index) in suggestions"
+                                        :key="
+                                            item.id ??
+                                            `${item.title}-${index}`
+                                        "
+                                        class="list-group-item list-group-item-action text-dark"
+                                        @click="
+                                            selectPrompt(
+                                                typeof item === 'string'
+                                                    ? item
+                                                    : item.title
+                                            )
+                                        "
+                                    >
+                                        {{
+                                            typeof item === 'string'
+                                                ? item
+                                                : item.title
+                                        }}
+                                    </li>
+                                </ul>
+                            </form>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </section>
+            </section>
 
-        <div class="container mb-5 flex-grow-1">
-            <div
-                v-if="alertVisible && successMessage"
-                class="alert alert-success alert-dismissible fade show"
-                role="alert"
-            >
-                {{ successMessage }}
-                <button
-                    type="button"
-                    class="btn-close"
-                    aria-label="Close"
-                    @click="hideSuccessAlert"
-                ></button>
-            </div>
+            <!-- Prompts Table -->
+            <div class="container mb-5 flex-grow-1">
+                <!-- Success Message -->
+                <div
+                    v-if="alertVisible && successMessage"
+                    class="alert alert-success alert-dismissible fade show"
+                    role="alert"
+                >
+                    {{ successMessage }}
 
-            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th class="py-3 ps-4">#</th>
-                                    <th class="py-3">Title</th>
-                                    <th class="py-3">Category</th>
-                                    <th class="py-3">Status</th>
-                                    <th class="py-3">Ratings</th>
-                                    <th class="py-3">Created Date</th>
-                                    <th class="py-3 text-end pe-4">Actions</th>
-                                </tr>
-                            </thead>
+                    <button
+                        type="button"
+                        class="btn-close"
+                        aria-label="Close"
+                        @click="hideSuccessAlert"
+                    ></button>
+                </div>
 
-                            <tbody>
-                                <tr
-                                    v-for="(prompt, index) in prompts"
-                                    :key="prompt.id"
-                                >
-                                    <td class="ps-4 fw-semibold">
-                                        {{ (currentPage - 1) * perPage + index + 1 }}
-                                    </td>
+                <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th class="py-3 ps-4">#</th>
+                                        <th class="py-3">Title</th>
+                                        <th class="py-3">Category</th>
+                                        <th class="py-3">Status</th>
+                                        <th class="py-3">Ratings</th>
+                                        <th class="py-3">Created Date</th>
+                                        <th class="py-3 text-end pe-4">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
 
-                                    <td>
-                                        <span class="fw-bold text-dark">
-                                            {{ prompt.title }}
-                                        </span>
-                                    </td>
+                                <tbody>
+                                    <tr
+                                        v-for="(prompt, index) in prompts"
+                                        :key="prompt.id"
+                                    >
+                                        <td class="ps-4 fw-semibold">
+                                            {{
+                                                (currentPage - 1) * perPage +
+                                                index +
+                                                1
+                                            }}
+                                        </td>
 
-                                    <td>
-                                        <span class="badge bg-secondary">
-                                            {{ categoryName(prompt) }}
-                                        </span>
-                                    </td>
+                                        <td>
+                                            <span class="fw-bold text-dark">
+                                                {{ prompt.title }}
+                                            </span>
+                                        </td>
 
-                                    <td>
-                                        <span
-                                            class="badge px-2 py-1"
-                                            :class="statusClass(prompt.status)"
+                                        <td>
+                                            <span class="badge bg-secondary">
+                                                {{ categoryName(prompt) }}
+                                            </span>
+                                        </td>
+
+                                        <td>
+                                            <span
+                                                class="badge px-2 py-1"
+                                                :class="
+                                                    statusClass(prompt.status)
+                                                "
+                                            >
+                                                {{
+                                                    statusLabel(prompt.status)
+                                                }}
+                                            </span>
+                                        </td>
+
+                                        <td>
+                                            <div
+                                                class="rating-stars"
+                                                title="Popularity Rating"
+                                            >
+                                                <i
+                                                    v-for="star in 5"
+                                                    :key="star"
+                                                    class="bi"
+                                                    :class="
+                                                        star <=
+                                                        ratingValue(prompt)
+                                                            ? 'bi-star-fill'
+                                                            : 'bi-star'
+                                                    "
+                                                ></i>
+                                            </div>
+                                        </td>
+
+                                        <td class="text-muted small">
+                                            {{
+                                                formattedDate(prompt.created_at)
+                                            }}
+                                        </td>
+
+                                        <td class="text-end pe-4">
+                                            <!-- Edit -->
+                                            <a
+                                                :href="editUrl(prompt)"
+                                                class="btn btn-sm btn-outline-primary me-1"
+                                            >
+                                                <i class="bi bi-pencil"></i>
+                                                Edit
+                                            </a>
+
+                                            <!-- Delete -->
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                @click="confirmDelete(prompt)"
+                                            >
+                                                <i class="bi bi-trash"></i>
+                                                Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Empty State -->
+                                    <tr v-if="prompts.length === 0">
+                                        <td
+                                            colspan="7"
+                                            class="text-center py-5 text-muted"
                                         >
-                                            {{ statusLabel(prompt.status) }}
-                                        </span>
-                                    </td>
-
-                                    <td>
-                                        <div class="rating-stars" title="Popularity Rating">
                                             <i
-                                                v-for="star in 5"
-                                                :key="star"
-                                                class="bi"
-                                                :class="star <= ratingValue(prompt) ? 'bi-star-fill' : 'bi-star'"
+                                                class="bi bi-folder2-open display-6 d-block mb-2 text-secondary"
                                             ></i>
-                                        </div>
-                                    </td>
 
-                                    <td class="text-muted small">
-                                        {{ formattedDate(prompt.created_at) }}
-                                    </td>
-
-                                    <td class="text-end pe-4">
-                                        <a
-                                            :href="editUrl(prompt)"
-                                            class="btn btn-sm btn-outline-primary me-1"
-                                        >
-                                            <i class="bi bi-pencil"></i> Edit
-                                        </a>
-
-                                        <button
-                                            type="button"
-                                            class="btn btn-sm btn-outline-danger"
-                                            @click="confirmDelete(prompt)"
-                                        >
-                                            <i class="bi bi-trash"></i> Delete
-                                        </button>
-                                    </td>
-                                </tr>
-
-                                <tr v-if="prompts.length === 0">
-                                    <td colspan="7" class="text-center py-5 text-muted">
-                                        <i class="bi bi-folder2-open display-6 d-block mb-2 text-secondary"></i>
-                                        You haven't submitted any prompts yet.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                                            You haven't submitted any prompts
+                                            yet.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
+
+                <!-- Pagination -->
+                <div
+                    v-if="lastPage > 1"
+                    class="d-flex justify-content-center mt-4"
+                >
+                    <ul class="pagination">
+                        <li
+                            class="page-item"
+                            :class="{ disabled: currentPage <= 1 }"
+                        >
+                            <a
+                                class="page-link"
+                                :href="
+                                    currentPage > 1
+                                        ? pageUrl(currentPage - 1)
+                                        : undefined
+                                "
+                                @click="
+                                    currentPage <= 1 &&
+                                        $event.preventDefault()
+                                "
+                            >
+                                Previous
+                            </a>
+                        </li>
+
+                        <li
+                            v-for="page in pages"
+                            :key="page"
+                            class="page-item"
+                            :class="{ active: page === currentPage }"
+                        >
+                            <a
+                                class="page-link"
+                                :href="pageUrl(page)"
+                                @click="
+                                    page === currentPage &&
+                                        $event.preventDefault()
+                                "
+                            >
+                                {{ page }}
+                            </a>
+                        </li>
+
+                        <li
+                            class="page-item"
+                            :class="{ disabled: currentPage >= lastPage }"
+                        >
+                            <a
+                                class="page-link"
+                                :href="
+                                    currentPage < lastPage
+                                        ? pageUrl(currentPage + 1)
+                                        : undefined
+                                "
+                                @click="
+                                    currentPage >= lastPage &&
+                                        $event.preventDefault()
+                                "
+                            >
+                                Next
+                            </a>
+                        </li>
+                    </ul>
+                </div>
             </div>
-
-            <div
-                v-if="lastPage > 1"
-                class="d-flex justify-content-center mt-4"
-            >
-                <ul class="pagination">
-                    <li
-                        class="page-item"
-                        :class="{ disabled: currentPage <= 1 }"
-                    >
-                        <a
-                            class="page-link"
-                            :href="currentPage > 1 ? pageUrl(currentPage - 1) : undefined"
-                            @click="currentPage <= 1 && $event.preventDefault()"
-                        >
-                            Previous
-                        </a>
-                    </li>
-
-                    <li
-                        v-for="page in pages"
-                        :key="page"
-                        class="page-item"
-                        :class="{ active: page === currentPage }"
-                    >
-                        <a
-                            class="page-link"
-                            :href="pageUrl(page)"
-                            @click="page === currentPage && $event.preventDefault()"
-                        >
-                            {{ page }}
-                        </a>
-                    </li>
-
-                    <li
-                        class="page-item"
-                        :class="{ disabled: currentPage >= lastPage }"
-                    >
-                        <a
-                            class="page-link"
-                            :href="currentPage < lastPage ? pageUrl(currentPage + 1) : undefined"
-                            @click="currentPage >= lastPage && $event.preventDefault()"
-                        >
-                            Next
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
         </main>
 
+        <!-- Modern Delete Confirmation Popup -->
+        <dialog
+            ref="deleteDialog"
+            class="delete-confirm-dialog"
+            aria-labelledby="deleteDialogTitle"
+            @click.self="closeDeleteDialog"
+            @cancel.prevent="closeDeleteDialog"
+        >
+            <div class="delete-dialog-content">
+                <div class="delete-dialog-icon" aria-hidden="true">
+                    <i class="bi bi-trash3-fill"></i>
+                </div>
+
+                <div class="delete-dialog-label">
+                    CONFIRM ACTION
+                </div>
+
+                <h2 id="deleteDialogTitle">
+                    Move prompt to trash?
+                </h2>
+
+                <p class="delete-dialog-description">
+                    This prompt will be moved to trash. You can continue
+                    only if you are sure.
+                </p>
+
+                <div
+                    v-if="deletingPrompt"
+                    class="delete-prompt-preview"
+                >
+                    <span class="delete-preview-icon">
+                        <i class="bi bi-file-earmark-text"></i>
+                    </span>
+
+                    <span class="delete-preview-title">
+                        {{
+                            deletingPrompt.title || 'Selected prompt'
+                        }}
+                    </span>
+                </div>
+
+                <div class="delete-dialog-actions">
+                    <button
+                        type="button"
+                        class="delete-cancel-btn"
+                        :disabled="deleting"
+                        @click="closeDeleteDialog"
+                    >
+                        Cancel
+                    </button>
+
+                    <button
+                        type="button"
+                        class="delete-confirm-btn"
+                        :disabled="deleting"
+                        @click="movePromptToTrash"
+                    >
+                        <span
+                            v-if="deleting"
+                            class="delete-spinner"
+                            aria-hidden="true"
+                        ></span>
+
+                        <i
+                            v-else
+                            class="bi bi-trash3"
+                        ></i>
+
+                        {{
+                            deleting
+                                ? 'Moving...'
+                                : 'Move to Trash'
+                        }}
+                    </button>
+                </div>
+
+                <div class="delete-dialog-footnote">
+                    <i class="bi bi-shield-check"></i>
+                    Please review before continuing.
+                </div>
+            </div>
+        </dialog>
     </div>
 </template>
-
 
 <style scoped>
 .user-prompts-page {
@@ -590,15 +812,12 @@ onBeforeUnmount(() => {
     left: 0;
     right: 0;
     z-index: 2000;
-
     display: block;
     margin: 0;
     padding: 6px 0;
-
     max-height: 240px;
     overflow-y: auto;
     overflow-x: hidden;
-
     list-style: none;
     background: #fff;
     border: 1px solid #e5e7eb;
@@ -611,13 +830,11 @@ onBeforeUnmount(() => {
     padding: 11px 16px;
     margin: 0;
     cursor: pointer;
-
     color: #212529;
     background: #fff;
     border: 0;
     text-align: left;
     font-size: .95rem;
-
     transition: background-color .15s ease, color .15s ease;
 }
 
@@ -745,6 +962,359 @@ onBeforeUnmount(() => {
 
     .user-prompt-suggestions li {
         padding: 10px 12px;
+    }
+}
+
+/* Centered, compact delete confirmation popup */
+.delete-confirm-dialog {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+
+    width: calc(100% - 32px);
+    max-width: 420px;
+    max-height: calc(100% - 32px);
+    overflow-y: auto;
+
+    padding: 0;
+    border: 1px solid #eeeef4;
+    border-radius: 18px;
+
+    background: #ffffff;
+    color: #24243a;
+
+    box-shadow: 0 20px 60px rgba(20, 18, 45, 0.25);
+}
+
+.delete-confirm-dialog[open] {
+    display: block;
+    animation: delete-dialog-in 0.2s ease-out;
+}
+
+.delete-confirm-dialog::backdrop {
+    background: rgba(20, 18, 45, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+/* Compact popup content */
+.delete-dialog-content {
+    padding: 24px;
+    text-align: center;
+}
+
+.delete-dialog-icon {
+    width: 54px;
+    height: 54px;
+    margin: 0 auto 14px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 16px;
+    background: #fff0f1;
+    color: #e04455;
+    font-size: 23px;
+}
+
+.delete-dialog-label {
+    margin-bottom: 6px;
+    color: #88889d;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+}
+
+.delete-dialog-content h2 {
+    margin: 0;
+    color: #24243a;
+    font-size: 21px;
+    font-weight: 750;
+    line-height: 1.3;
+}
+
+.delete-dialog-description {
+    margin: 10px auto 17px;
+    max-width: 320px;
+    color: #77778b;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+/* Selected prompt preview */
+.delete-prompt-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    margin-bottom: 18px;
+    padding: 10px 12px;
+
+    border: 1px solid #ededf4;
+    border-radius: 11px;
+    background: #f8f8fc;
+    text-align: left;
+}
+
+.delete-preview-icon {
+    display: flex;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 9px;
+    background: #eceaff;
+    color: #6255d9;
+    font-size: 16px;
+}
+
+.delete-preview-title {
+    overflow: hidden;
+    color: #39394f;
+    font-size: 13px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Action buttons */
+.delete-dialog-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.delete-dialog-actions button {
+    display: inline-flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 42px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 10px;
+
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.delete-dialog-actions button:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.delete-dialog-actions button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.delete-cancel-btn {
+    background: #f0f0f6;
+    color: #55556c;
+}
+
+.delete-cancel-btn:hover:not(:disabled) {
+    background: #e5e5ef;
+}
+
+.delete-confirm-btn {
+    background: linear-gradient(135deg, #e84d5b, #cf3044);
+    color: #ffffff;
+    box-shadow: 0 5px 13px rgba(207, 48, 68, 0.2);
+}
+
+.delete-confirm-btn:hover:not(:disabled) {
+    background: #c92e42;
+}
+
+/* Loading spinner */
+.delete-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.45);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: delete-spin 0.7s linear infinite;
+}
+
+/* Footer note */
+.delete-dialog-footnote {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+
+    margin-top: 14px;
+    color: #9696a8;
+    font-size: 10px;
+}
+
+.delete-dialog-footnote i {
+    color: #6e9d87;
+}
+
+@keyframes delete-dialog-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes delete-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Mobile screens */
+@media (max-width: 480px) {
+    .delete-confirm-dialog {
+        max-width: 360px;
+    }
+
+    .delete-dialog-content {
+        padding: 20px 17px;
+    }
+
+    .delete-dialog-content h2 {
+        font-size: 19px;
+    }
+
+    .delete-dialog-actions {
+        gap: 8px;
+    }
+
+    .delete-dialog-actions button {
+        padding: 10px 7px;
+        font-size: 11px;
+    }
+}
+
+.delete-dialog-actions button:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.delete-dialog-actions button:focus-visible {
+    outline: 3px solid rgba(98, 85, 217, .28);
+    outline-offset: 3px;
+}
+
+.delete-dialog-actions button:disabled {
+    cursor: wait;
+    opacity: .7;
+}
+
+.delete-cancel-btn {
+    color: #55556c;
+    background: #f0f0f6;
+}
+
+.delete-cancel-btn:hover:not(:disabled) {
+    background: #e7e7f0;
+}
+
+.delete-confirm-btn {
+    color: #fff;
+    background: linear-gradient(135deg, #e84d5b, #cf3044);
+    box-shadow: 0 7px 16px rgba(207, 48, 68, .2);
+}
+
+.delete-confirm-btn:hover:not(:disabled) {
+    box-shadow: 0 10px 22px rgba(207, 48, 68, .28);
+}
+
+.delete-spinner {
+    width: 15px;
+    height: 15px;
+    border: 2px solid rgba(255, 255, 255, .45);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: delete-spin .7s linear infinite;
+}
+
+.delete-dialog-footnote {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 18px;
+    color: #9696a8;
+    font-size: 11px;
+}
+
+.delete-dialog-footnote i {
+    color: #6e9d87;
+    font-size: 13px;
+}
+
+@keyframes delete-dialog-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes delete-backdrop-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes delete-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 480px) {
+    .delete-dialog-content {
+        padding: 27px 20px 21px;
+    }
+
+    .delete-dialog-content h2 {
+        font-size: 21px;
+    }
+
+    .delete-dialog-actions {
+        flex-direction: column-reverse;
+    }
+
+    .delete-dialog-actions button {
+        flex: auto;
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .delete-confirm-dialog[open],
+    .delete-confirm-dialog::backdrop,
+    .delete-spinner {
+        animation-duration: .01ms;
+    }
+
+    .delete-dialog-actions button {
+        transition: none;
     }
 }
 </style>

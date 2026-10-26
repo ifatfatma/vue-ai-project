@@ -14,7 +14,7 @@ class UserAccountController extends Controller
         
         $user = Auth::guard('frontend')->user(); 
         
-        return view('pages.front.edit-account', compact('user'));
+        return view('front.edit-account', compact('user'));
     }
 
     public function update(Request $request)
