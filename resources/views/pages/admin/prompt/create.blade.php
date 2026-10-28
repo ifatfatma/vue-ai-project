@@ -1,4 +1,3 @@
-```blade
 @extends('layouts.backlayout')
 
 @section('content')
@@ -630,6 +629,19 @@ textarea.form-control {
 
 
 {{-- ========================================================================
+     CUSTOM STYLISH ALERT (REPLACES DEFAULT BROWSER ALERT)
+     ======================================================================== --}}
+
+<div id="custom-stylish-alert-create" class="alert alert-danger alert-dismissible fade show prompt-form-alert d-none mb-3" role="alert">
+    <div class="d-flex align-items-center">
+        <i class="mdi mdi-alert-circle-outline fs-4 me-2"></i>
+        <div id="custom-alert-message-create"></div>
+    </div>
+    <button type="button" class="btn-close" onclick="hideCustomCreateAlert()"></button>
+</div>
+
+
+{{-- ========================================================================
      SUCCESS MESSAGE
      ======================================================================== --}}
 
@@ -1095,6 +1107,29 @@ textarea.form-control {
 
 const VARIABLE_META_MARKER = '<!--AI_PROMPT_VARIABLES:';
 
+function showCustomCreateAlert(message) {
+    const alertBox = document.getElementById('custom-stylish-alert-create');
+    const messageBox = document.getElementById('custom-alert-message-create');
+    if (alertBox && messageBox) {
+        messageBox.textContent = message;
+        alertBox.classList.remove('d-none');
+        
+        const formCard = document.querySelector('.prompt-form-card');
+        if (formCard) {
+            formCard.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+}
+
+function hideCustomCreateAlert() {
+    const alertBox = document.getElementById('custom-stylish-alert-create');
+    if (alertBox) {
+        alertBox.classList.add('d-none');
+    }
+}
+
 function stripVariableMeta(text) {
     return String(text || '')
         .replace(/<!--AI_PROMPT_VARIABLES:[\s\S]*?-->\s*$/i, '')
@@ -1306,17 +1341,25 @@ function validateVariableSettings(box) {
 
         if (!input?.value.trim()) {
 
-            input?.focus();
+            if (input) {
+                input.focus();
+                input.style.borderColor = '#ef4444';
+            }
 
-            alert(
+            showCustomCreateAlert(
                 `Please enter an example / dummy value for Variable [${variable}].`
             );
 
             return false;
+        } else {
+            if (input) {
+                input.style.borderColor = '';
+            }
         }
 
     }
 
+    hideCustomCreateAlert();
     return true;
 
 }
@@ -2016,7 +2059,7 @@ function deleteBox(boxId) {
 
     if (promptBoxes.length <= 1) {
 
-        alert(
+        showCustomCreateAlert(
             'At least one prompt is required.'
         );
 
@@ -2047,4 +2090,3 @@ function clearInput(inputId) {
 </script>
 
 @endsection
-```
