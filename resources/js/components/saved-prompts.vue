@@ -391,37 +391,50 @@ function handleModalHidden(event) {
     }
 }
 </script>
-
 <template>
-    <div class="container saved-page">
-        <div class="saved-header">
-            <div class="saved-header-content">
-                <div class="d-flex align-items-center justify-content-between flex-wrap gap-4">
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="saved-icon">
-                            <i class="bi bi-bookmark-fill"></i>
-                        </div>
+<div class="saved-page">
 
-                        <div>
-                            <h2 class="fw-bold mb-1">Saved Prompts</h2>
-                            <p class="mb-0">
-                                Your personal collection of saved AI prompts.
-                            </p>
+    <!-- Main site header -->
+    <header class="saved-topbar">
+        <div class="saved-topbar-inner">
+            <a :href="exploreUrl" class="saved-brand" aria-label="AI Prompt Hub home">
+                AI Prompt Hub
+            </a>
 
-                            <span class="saved-count">
-                                <i class="bi bi-bookmark-check-fill"></i>
-                                {{ totalSaved }} Saved
-                            </span>
-                        </div>
-                    </div>
-
-                    <a :href="exploreUrl" class="btn explore-btn">
-                        <i class="bi bi-grid-3x3-gap-fill"></i>
-                        Explore Prompts
-                    </a>
-                </div>
-            </div>
+            <a :href="exploreUrl" class="saved-back-home">
+                <i class="bi bi-arrow-left"></i>
+                <span>Back to Home</span>
+            </a>
         </div>
+    </header>
+
+    <main class="saved-content">
+
+<!-- Saved Prompts Hero - matches the Submitted Prompts page -->
+<section class="saved-hero">
+    <div class="saved-hero-content">
+        <span class="saved-hero-eyebrow">
+            <i class="bi bi-bookmark-heart-fill"></i> YOUR PERSONAL COLLECTION
+        </span>
+
+        <h1>My Saved Prompts</h1>
+        <p>Keep your favourite AI prompts in one place and access them anytime.</p>
+
+        <div class="saved-hero-actions">
+            <span class="saved-count">
+                <i class="bi bi-bookmark-check-fill"></i>
+                {{ totalSaved }} Saved
+            </span>
+
+            <a :href="exploreUrl" class="btn explore-btn">
+                <i class="bi bi-grid-3x3-gap-fill"></i>
+                Explore Prompts
+            </a>
+        </div>
+    </div>
+</section>
+
+
 
         <div
             v-if="prompts.length"
@@ -823,24 +836,45 @@ function handleModalHidden(event) {
                 </div>
             </div>
         </dialog>
-    </div>
+   
+    </main>
+</div>
 </template>
 
 <style>
+
+
 /* Saved page */
+
+/* Saved page background */
 .saved-page {
     min-height: calc(100vh - 80px);
-    padding-top: 45px;
+    padding-top: 35px;
     padding-bottom: 80px;
-    background:
-        radial-gradient(circle at 10% 10%, rgba(99,102,241,.08), transparent 28%),
-        radial-gradient(circle at 90% 80%, rgba(124,58,237,.07), transparent 30%);
+
+    background-color: #f3f2fb !important;
+
+    background-image:
+        radial-gradient(
+            circle at 10% 10%,
+            rgba(99,102,241,.13),
+            transparent 30%
+        ),
+        radial-gradient(
+            circle at 90% 80%,
+            rgba(124,58,237,.12),
+            transparent 35%
+        );
+
+    background-attachment: fixed;
 }
 
+
+/* Header */
 .saved-header {
     position: relative;
     overflow: hidden;
-    padding: 32px;
+    padding: 35px 40px;
     margin-bottom: 35px;
     border-radius: 24px;
     border: 1px solid #e0e7ff;
@@ -875,30 +909,71 @@ function handleModalHidden(event) {
     z-index: 2;
 }
 
+/* Compact Bookmark Icon */
 .saved-icon {
-    width: 64px;
-    height: 64px;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    min-height: 38px;
+
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    border-radius: 18px;
+
+    border-radius: 14px;
     background: linear-gradient(135deg,#6366f1,#7c3aed);
     color: #fff;
-    font-size: 27px;
-    box-shadow: 0 12px 28px rgba(99,102,241,.25);
+    font-size: 23px;
+
+    box-shadow: 0 8px 20px rgba(99,102,241,.20);
 }
 
+/* Heading */
 .saved-header h2 {
     color: #111827;
     font-size: 27px;
     letter-spacing: -.5px;
+    margin-bottom: 5px;
 }
 
+/* Description */
 .saved-header p {
     color: #64748b;
     font-size: 14px;
+    margin-bottom: 8px;
 }
+
+/* Mobile */
+@media (max-width: 576px) {
+    .saved-header {
+        padding: 25px 20px;
+    }
+
+    .saved-icon {
+        width: 35px;
+        height: 35px;
+        min-width: 35px;
+        min-height: 35px;
+        font-size: 20px;
+        border-radius: 12px;
+    }
+
+    .saved-header h2 {
+        font-size: 22px;
+    }
+}
+
+
+/* Space between icon/title and description */
+.saved-header-content .d-flex.align-items-center.gap-3 {
+    column-gap: 15px !important;
+}
+
+.saved-header p {
+    margin-top: 12px !important;
+}
+
 
 .saved-count {
     display: inline-flex;
@@ -1593,4 +1668,390 @@ function handleModalHidden(event) {
         animation-duration: .01ms;
     }
 }
+
+
+
+
+/* ==========================================
+   SAVED PAGE TOP NAVIGATION
+   Matches My Submitted Prompts page
+========================================== */
+
+.saved-topbar {
+    width: 100%;
+    height: 72px;
+    min-height: 72px;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+
+    background: #212529;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    border: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+}
+
+.saved-topbar-inner {
+    width: 100%;
+    height: 72px;
+    min-height: 72px;
+    padding: 0 2.3%;
+    box-sizing: border-box;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+/* Brand */
+.saved-brand {
+    color: #fff;
+    text-decoration: none;
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: -.3px;
+    line-height: 1.2;
+}
+
+.saved-brand:hover,
+.saved-brand:focus {
+    color: #f8f9fa;
+    text-decoration: none;
+}
+
+/* Back to Home Button */
+.saved-back-home {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+
+    padding: 7px 13px;
+
+    border: 1px solid rgba(255, 255, 255, .8);
+    border-radius: 5px;
+
+    color: #fff;
+    background: transparent;
+
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+
+    transition: background .2s ease, color .2s ease;
+}
+
+.saved-back-home:hover {
+    background: #fff;
+    color: #212529;
+}
+
+.saved-back-home i {
+    font-size: 16px;
+}
+
+/* Remove unwanted top spacing */
+.saved-page {
+    padding-top: 0 !important;
+}
+
+.saved-page > .saved-topbar {
+    margin-top: 0 !important;
+}
+
+/* Main Content */
+.saved-content {
+    padding-top: 34px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 576px) {
+    .saved-topbar,
+    .saved-topbar-inner {
+        height: 65px;
+        min-height: 65px;
+    }
+
+    .saved-topbar-inner {
+        padding: 0 15px;
+    }
+
+    .saved-brand {
+        font-size: 1.1rem;
+    }
+
+    .saved-back-home {
+        padding: 6px 10px;
+        font-size: 13px;
+    }
+
+    .saved-content {
+        padding-top: 22px;
+    }
+}
+
+@media (max-width: 380px) {
+    .saved-brand {
+        font-size: 17px;
+    }
+
+    .saved-back-home {
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+}
+
+
+
+
+/* ==========================================
+   SAVED PAGE - MATCH SUBMITTED PROMPTS DESIGN
+   Visual-only overrides; Vue functionality unchanged
+========================================== */
+.saved-page {
+    min-height: 100vh;
+    padding: 0 0 70px !important;
+    background: #f5f6fa !important;
+    background-image:
+        radial-gradient(circle at 8% 30%, rgba(99,102,241,.10), transparent 27%),
+        radial-gradient(circle at 92% 70%, rgba(124,58,237,.08), transparent 30%) !important;
+    background-attachment: fixed;
+}
+
+.saved-topbar,
+.saved-topbar-inner {
+    height: 82px;
+    min-height: 82px;
+}
+.saved-topbar {
+    background: #212529 !important;
+    border: 0 !important;
+    box-shadow: 0 2px 9px rgba(0,0,0,.13);
+}
+.saved-topbar-inner { padding: 0 2.3%; }
+.saved-brand {
+    color: #fff !important;
+    font-size: 27px;
+    font-weight: 800;
+    letter-spacing: -.45px;
+}
+.saved-back-home {
+    min-height: 44px;
+    padding: 7px 15px;
+    border: 1px solid rgba(255,255,255,.75);
+    border-radius: 6px;
+    background: transparent;
+    color: #fff !important;
+    font-size: 15px;
+}
+.saved-back-home:hover { background: #fff; color: #212529 !important; }
+
+.saved-content {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0 0 20px !important;
+}
+
+/* Purple gradient hero used on the submitted prompts page */
+.saved-hero {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 292px;
+    margin: 0 0 32px;
+    padding: 38px 24px 42px;
+    overflow: hidden;
+    text-align: center;
+    color: #fff;
+    background: linear-gradient(110deg, #151a2d 0%, #211644 48%, #48218a 100%);
+}
+.saved-hero::before,
+.saved-hero::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+}
+.saved-hero::before {
+    width: 300px;
+    height: 300px;
+    left: -150px;
+    bottom: -210px;
+    background: rgba(59,130,246,.10);
+}
+.saved-hero::after {
+    width: 360px;
+    height: 360px;
+    right: -150px;
+    top: -245px;
+    background: rgba(139,92,246,.18);
+}
+.saved-hero-content {
+    position: relative;
+    z-index: 1;
+    width: min(100%, 900px);
+}
+.saved-hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 12px;
+    color: #d8ccff;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+}
+.saved-hero h1 {
+    margin: 0 0 12px;
+    color: #fff;
+    font-size: clamp(34px, 4vw, 52px);
+    font-weight: 500;
+    letter-spacing: -1.4px;
+    line-height: 1.15;
+}
+.saved-hero p {
+    margin: 0 auto 25px;
+    color: #d8d7e8;
+    font-size: 17px;
+    line-height: 1.6;
+}
+.saved-hero-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.saved-hero .saved-count {
+    margin: 0;
+    padding: 10px 16px;
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: 7px;
+    background: rgba(255,255,255,.10);
+    color: #fff;
+    font-size: 14px;
+}
+.saved-hero .explore-btn {
+    min-height: 44px;
+    padding: 11px 20px;
+    border-radius: 7px;
+    background: #4655ed;
+    color: #fff;
+    box-shadow: none;
+}
+.saved-hero .explore-btn:hover {
+    background: #3544dc;
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+/* Prompt grid spacing and clean white cards */
+#savedPromptsGrid {
+    width: calc(100% - 64px);
+    margin: 0 auto;
+}
+.saved-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(15,23,42,.07);
+}
+.saved-card:hover {
+    border-color: #c7c9f8;
+    box-shadow: 0 12px 28px rgba(31,41,55,.12);
+    transform: translateY(-3px);
+}
+.saved-card-actions { padding: 13px; }
+.saved-copy-btn {
+    background: #4655ed;
+    box-shadow: none;
+}
+.saved-copy-btn:hover { background: #3544dc; }
+.saved-remove-btn { border-radius: 8px; }
+
+/* Empty state similar to the submitted-prompts white results panel */
+.empty-saved {
+    width: calc(100% - 64px);
+    min-height: 290px;
+    margin: 0 auto;
+    padding: 55px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e5e7eb;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(15,23,42,.08);
+}
+.empty-saved-icon {
+    width: 58px;
+    height: 58px;
+    margin: 0 auto 15px;
+    border-radius: 14px;
+    background: #f1f2ff;
+    color: #7474e9;
+    font-size: 27px;
+}
+.empty-saved h4 {
+    margin-bottom: 8px;
+    color: #202536;
+    font-size: 21px;
+    font-weight: 700;
+}
+.empty-saved p {
+    max-width: 620px;
+    color: #718096 !important;
+    font-size: 15px;
+}
+.empty-saved .explore-btn {
+    min-height: 44px;
+    padding: 11px 20px;
+    border-radius: 7px;
+    background: #4655ed;
+    box-shadow: none;
+}
+.empty-saved .explore-btn:hover { background: #3544dc; }
+
+.saved-pagination { margin-bottom: 25px; }
+.saved-pagination .page-link {
+    color: #4655ed;
+    border-color: #e1e4ed;
+}
+.saved-pagination .page-item.active .page-link {
+    background: #4655ed;
+    border-color: #4655ed;
+    color: #fff;
+}
+
+@media (max-width: 767px) {
+    .saved-topbar,
+    .saved-topbar-inner { height: 68px; min-height: 68px; }
+    .saved-topbar-inner { padding: 0 15px; }
+    .saved-brand { font-size: 20px; }
+    .saved-back-home { min-height: 38px; padding: 6px 10px; font-size: 12px; }
+    .saved-hero { min-height: 250px; padding: 34px 18px; }
+    .saved-hero h1 { font-size: 34px; }
+    .saved-hero p { font-size: 14px; margin-bottom: 19px; }
+    #savedPromptsGrid,
+    .empty-saved { width: calc(100% - 30px); }
+    .empty-saved { min-height: 250px; padding: 42px 18px; }
+    .saved-card-image,
+    .saved-card-placeholder { height: 230px; }
+}
+@media (max-width: 420px) {
+    .saved-brand { font-size: 18px; }
+    .saved-back-home { padding: 6px 8px; font-size: 11px; }
+    .saved-hero h1 { font-size: 29px; }
+    .saved-hero-eyebrow { font-size: 10px; letter-spacing: 1.1px; }
+}
+
 </style>
