@@ -17,15 +17,17 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
 
-        <li class="nav-item">
-    <button type="button"
-        class="btn add-prompt-btn btn-sm fw-bold px-3 py-2"
-        data-bs-toggle="modal"
-        data-bs-target="#addPromptModal">
-        <span style="font-size: 20px; font-weight: bold; line-height: 1;">+</span>
-        Add Prompt
-    </button>
-</li>
+    <ul class="navbar-nav ms-auto align-items-center flex-row gap-2">
+    <!-- Add Prompt Button -->
+    <li class="nav-item">
+        <button type="button"
+            class="btn add-prompt-btn btn-sm fw-bold px-3 py-2"
+            data-bs-toggle="modal"
+            data-bs-target="#addPromptModal">
+            <span style="font-size: 20px; font-weight: bold; line-height: 1;">+</span>
+            Add Prompt
+        </button>
+    </li>
 
                    
                     @auth('frontend')
