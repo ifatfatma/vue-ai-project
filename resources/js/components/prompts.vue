@@ -553,12 +553,7 @@ onBeforeUnmount(() => {
                         </ul>
                     </div>
 
-                    <button
-                        type="submit"
-                        class="btn btn-hero-search px-4"
-                    >
-                        Search
-                    </button>
+                   
                 </div>
             </form>
         </div>
